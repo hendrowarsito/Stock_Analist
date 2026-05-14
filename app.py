@@ -142,16 +142,71 @@ with st.sidebar:
                             help="sk-ant-... dari console.anthropic.com")
 
     st.markdown("---")
-    st.markdown("### 📋 Watchlist")
-    WATCHLIST = ["NVDA", "PLTR", "TSLA", "DUOL", "AMD", "META", "AMZN", "ASTS"]
+    st.markdown("### 💼 My Positions")
+
+    HOLDINGS = {
+        "AMD":  3.7012,
+        "TSLA": 3.6887,
+        "DUOL": 13.5623,
+        "NVDA": 4.4887,
+        "HIMS": 39.7669,
+        "PLTR": 6.5000,
+        "IBIT": 17.3876,
+        "VOO":  0.9261,
+        "MSFT": 0.4883,
+    }
+
+    @st.cache_data(ttl=300)
+    def fetch_portfolio_prices(tickers):
+        prices = {}
+        for t in tickers:
+            try:
+                tk = yf.Ticker(t)
+                h = tk.history(period="2d", interval="1d")
+                if not h.empty:
+                    prices[t] = float(h["Close"].iloc[-1])
+            except Exception:
+                prices[t] = None
+        return prices
+
+    prices_live = fetch_portfolio_prices(tuple(HOLDINGS.keys()))
+
+    total_value = sum(
+        prices_live.get(t, 0) * s
+        for t, s in HOLDINGS.items()
+        if prices_live.get(t)
+    )
+
+    st.markdown(f"""
+    <div style="background:#f0fdf4;border:1.5px solid #16a34a;border-radius:10px;
+                padding:12px 14px;margin-bottom:12px;text-align:center;">
+        <div style="font-size:10px;font-weight:800;color:#15803d;letter-spacing:1.2px;
+                    text-transform:uppercase;margin-bottom:4px;">Total Portfolio Value</div>
+        <div style="font-size:24px;font-weight:900;color:#14532d;">${total_value:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     selected_ticker = None
-    cols = st.columns(2)
-    for i, t in enumerate(WATCHLIST):
-        if cols[i % 2].button(t, key=f"wb_{t}", use_container_width=True):
-            selected_ticker = t
+    for t, shares in HOLDINGS.items():
+        px  = prices_live.get(t)
+        val = px * shares if px else None
+        px_str  = f"${px:,.2f}"  if px  else "–"
+        val_str = f"${val:,.2f}" if val else "–"
+        c_btn, c_info = st.columns([1, 2])
+        with c_btn:
+            if st.button(t, key=f"pos_{t}", use_container_width=True):
+                selected_ticker = t
+        with c_info:
+            st.markdown(
+                f"<div style='font-size:11px;line-height:1.65;color:#475569;padding-top:2px'>"
+                f"<span style='font-weight:700;color:#1e293b'>{px_str}</span><br>"
+                f"{shares} sh &nbsp;·&nbsp; <span style='color:#059669;font-weight:700'>{val_str}</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
     st.markdown("---")
-    st.markdown("### 🔍 Enter Ticker")
+    st.markdown("### 🔍 Other Ticker")
     manual_ticker = st.text_input("Ticker Symbol", placeholder="e.g. AAPL").upper().strip()
 
     st.markdown("---")
