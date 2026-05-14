@@ -299,7 +299,7 @@ def render_chart(hist, ticker):
 def call_agent(client, system: str, user: str, max_tokens: int) -> str:
     try:
         msg = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5",
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
@@ -511,6 +511,6 @@ Be specific with price levels. Be decisive. No hedging.""",
     st.markdown("---")
     st.caption(
         f"⏱ {datetime.now().strftime('%Y-%m-%d %H:%M')}  ·  "
-        f"Model: claude-sonnet-4-20250514  ·  Depth: {depth}  ·  "
+        f"Model: claude-sonnet-4-5  ·  Depth: {depth}  ·  "
         f"⚠️ Educational purposes only. Not financial advice."
     )
