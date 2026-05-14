@@ -18,30 +18,78 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+    /* ── Global ── */
+    .stApp { background: #f5f7fa; }
+    section[data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e2e8f0; }
+
+    /* ── Agent cards ── */
     .agent-card {
-        background: #1a1d24;
-        border: 1px solid #2d3139;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        color: #1e293b;
     }
     .agent-header {
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 1.5px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 1.8px;
         text-transform: uppercase;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f1f5f9;
     }
-    .bull   { color: #00d084; }
-    .bear   { color: #ff4b6e; }
-    .tech   { color: #38bdf8; }
-    .fund   { color: #fb923c; }
-    .newsc  { color: #a78bfa; }
-    .sent   { color: #34d399; }
-    .decision-buy  { background:#00d08418; border:2px solid #00d084; border-radius:12px; padding:20px; margin-bottom:20px; }
-    .decision-sell { background:#ff4b6e18; border:2px solid #ff4b6e; border-radius:12px; padding:20px; margin-bottom:20px; }
-    .decision-hold { background:#f0b42918; border:2px solid #f0b429; border-radius:12px; padding:20px; margin-bottom:20px; }
-    div[data-testid="stExpander"] { border: 1px solid #2d3139; border-radius: 8px; }
+
+    /* ── Agent accent colors (kept vivid for contrast on white) ── */
+    .bull   { color: #059669; }
+    .bear   { color: #dc2626; }
+    .tech   { color: #0284c7; }
+    .fund   { color: #ea580c; }
+    .newsc  { color: #7c3aed; }
+    .sent   { color: #0891b2; }
+
+    /* ── Decision boxes ── */
+    .decision-buy  {
+        background: #f0fdf4;
+        border: 2px solid #16a34a;
+        border-radius: 14px;
+        padding: 22px 26px;
+        margin-bottom: 22px;
+        color: #14532d;
+        box-shadow: 0 2px 8px rgba(22,163,74,0.12);
+    }
+    .decision-sell {
+        background: #fff1f2;
+        border: 2px solid #dc2626;
+        border-radius: 14px;
+        padding: 22px 26px;
+        margin-bottom: 22px;
+        color: #7f1d1d;
+        box-shadow: 0 2px 8px rgba(220,38,38,0.12);
+    }
+    .decision-hold {
+        background: #fffbeb;
+        border: 2px solid #d97706;
+        border-radius: 14px;
+        padding: 22px 26px;
+        margin-bottom: 22px;
+        color: #78350f;
+        box-shadow: 0 2px 8px rgba(217,119,6,0.12);
+    }
+
+    /* ── Misc ── */
+    div[data-testid="stExpander"] {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #ffffff;
+    }
+    .stTabs [data-baseweb="tab-list"] { background: #f1f5f9; border-radius: 8px; padding: 4px; }
+    .stTabs [data-baseweb="tab"]      { border-radius: 6px; color: #475569; font-weight: 600; }
+    .stTabs [aria-selected="true"]    { background: #ffffff; color: #1e293b; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stButton > button                { border-radius: 8px; font-weight: 600; }
+    div[data-testid="stMetric"]       { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -280,17 +328,19 @@ def render_chart(hist, ticker):
                           line_width=1, row=3, col=1)
 
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+        template="plotly_white",
+        paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
         height=560, showlegend=True,
         legend=dict(orientation="h", y=1.02, x=0, font=dict(size=11)),
         xaxis_rangeslider_visible=False,
         margin=dict(l=0, r=0, t=40, b=0),
         title=dict(text=f"{ticker} – 6 Month Chart", x=0.5,
-                   font=dict(size=14, color="#e2e8f0")),
+                   font=dict(size=14, color="#1e293b")),
+        font=dict(color="#475569"),
     )
     for r in [1, 2, 3]:
-        fig.update_yaxes(gridcolor="#1e2129", row=r, col=1)
+        fig.update_yaxes(gridcolor="#e2e8f0", row=r, col=1)
+        fig.update_xaxes(gridcolor="#e2e8f0", row=r, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
     return fig
 
