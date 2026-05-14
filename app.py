@@ -186,21 +186,39 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    selected_ticker = None
+    # Build sorted positions list (largest value first)
+    positions = []
     for t, shares in HOLDINGS.items():
         px  = prices_live.get(t)
-        val = px * shares if px else None
-        px_str  = f"${px:,.2f}"  if px  else "–"
+        val = px * shares if px else 0.0
+        positions.append((t, shares, px, val))
+    positions.sort(key=lambda x: x[3], reverse=True)
+
+    selected_ticker = None
+    for t, shares, px, val in positions:
+        pct     = (val / total_value * 100) if total_value > 0 and val > 0 else 0
+        px_str  = f"${px:,.2f}" if px  else "–"
         val_str = f"${val:,.2f}" if val else "–"
+        pct_str = f"{pct:.1f}%"
+
+        # Color bar width for visual allocation
+        bar_w = max(2, int(pct * 2.2))  # scale to max ~100px for ~45%
+
         c_btn, c_info = st.columns([1, 2])
         with c_btn:
             if st.button(t, key=f"pos_{t}", use_container_width=True):
                 selected_ticker = t
         with c_info:
             st.markdown(
-                f"<div style='font-size:11px;line-height:1.65;color:#475569;padding-top:2px'>"
-                f"<span style='font-weight:700;color:#1e293b'>{px_str}</span><br>"
-                f"{shares} sh &nbsp;·&nbsp; <span style='color:#059669;font-weight:700'>{val_str}</span>"
+                f"<div style='font-size:11px;line-height:1.6;color:#475569;padding-top:1px'>"
+                f"<span style='font-weight:700;color:#1e293b'>{px_str}</span>"
+                f"&nbsp;<span style='color:#059669;font-weight:700'>{val_str}</span><br>"
+                f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px'>"
+                f"<div style='background:#e2e8f0;border-radius:3px;height:5px;width:80px;overflow:hidden'>"
+                f"<div style='background:#16a34a;height:5px;width:{bar_w}px;border-radius:3px'></div>"
+                f"</div>"
+                f"<span style='font-size:10px;color:#64748b;font-weight:600'>{pct_str}</span>"
+                f"</div>"
                 f"</div>",
                 unsafe_allow_html=True
             )
