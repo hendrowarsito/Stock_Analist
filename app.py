@@ -1,15 +1,13 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
 import anthropic
-import json
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# ── Page config ──────────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="US Stock Analyzer – Multi-Agent",
     page_icon="📊",
@@ -17,10 +15,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background: #0e1117; }
     .agent-card {
         background: #1a1d24;
         border: 1px solid #2d3139;
@@ -29,545 +26,491 @@ st.markdown("""
         margin-bottom: 12px;
     }
     .agent-header {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 700;
         letter-spacing: 1.5px;
         text-transform: uppercase;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
     }
-    .bull  { color: #00d084; }
-    .bear  { color: #ff4b6e; }
-    .neut  { color: #f0b429; }
-    .judge { color: #7c6ff7; }
-    .tech  { color: #38bdf8; }
-    .fund  { color: #fb923c; }
-    .news  { color: #a78bfa; }
-    .sent  { color: #34d399; }
-    .decision-buy  { background:#00d08422; border:2px solid #00d084; border-radius:12px; padding:20px; }
-    .decision-sell { background:#ff4b6e22; border:2px solid #ff4b6e; border-radius:12px; padding:20px; }
-    .decision-hold { background:#f0b42922; border:2px solid #f0b429; border-radius:12px; padding:20px; }
-    .metric-box {
-        background: #1a1d24;
-        border: 1px solid #2d3139;
-        border-radius: 8px;
-        padding: 12px;
-        text-align: center;
-    }
-    .stProgress > div > div { background: linear-gradient(90deg, #7c6ff7, #38bdf8); }
+    .bull   { color: #00d084; }
+    .bear   { color: #ff4b6e; }
+    .tech   { color: #38bdf8; }
+    .fund   { color: #fb923c; }
+    .newsc  { color: #a78bfa; }
+    .sent   { color: #34d399; }
+    .decision-buy  { background:#00d08418; border:2px solid #00d084; border-radius:12px; padding:20px; margin-bottom:20px; }
+    .decision-sell { background:#ff4b6e18; border:2px solid #ff4b6e; border-radius:12px; padding:20px; margin-bottom:20px; }
+    .decision-hold { background:#f0b42918; border:2px solid #f0b429; border-radius:12px; padding:20px; margin-bottom:20px; }
     div[data-testid="stExpander"] { border: 1px solid #2d3139; border-radius: 8px; }
-    .watchlist-btn button { width: 100%; margin-bottom: 4px; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── Pure-pandas Technical Indicators (no external TA lib) ─────────────────────
+def calc_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    close = df["Close"]
+    high  = df["High"]
+    low   = df["Low"]
+
+    # RSI (Wilder smoothing via EWM)
+    delta = close.diff()
+    gain  = delta.clip(lower=0)
+    loss  = -delta.clip(upper=0)
+    df["RSI"] = 100 - (100 / (1 + gain.ewm(com=13, adjust=False).mean()
+                                   / loss.ewm(com=13, adjust=False).mean().replace(0, np.nan)))
+
+    # MACD
+    ema12        = close.ewm(span=12, adjust=False).mean()
+    ema26        = close.ewm(span=26, adjust=False).mean()
+    df["MACD"]   = ema12 - ema26
+    df["MACD_S"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    df["MACD_H"] = df["MACD"] - df["MACD_S"]
+
+    # Bollinger Bands (20, 2σ)
+    df["SMA20"]  = close.rolling(20).mean()
+    std20        = close.rolling(20).std()
+    df["BB_UP"]  = df["SMA20"] + 2 * std20
+    df["BB_LO"]  = df["SMA20"] - 2 * std20
+
+    # SMAs
+    df["SMA50"]  = close.rolling(50).mean()
+    df["SMA200"] = close.rolling(200).mean()
+
+    # ATR (Wilder)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low  - close.shift()).abs()
+    ], axis=1).max(axis=1)
+    df["ATR"] = tr.ewm(com=13, adjust=False).mean()
+
+    return df
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
     api_key = st.text_input("Anthropic API Key", type="password",
-                            help="sk-ant-... key from console.anthropic.com")
+                            help="sk-ant-... dari console.anthropic.com")
 
     st.markdown("---")
     st.markdown("### 📋 Watchlist")
-    DEFAULT_WATCHLIST = ["NVDA", "PLTR", "TSLA", "DUOL", "AMD", "META", "AMZN", "ASTS"]
-    
+    WATCHLIST = ["NVDA", "PLTR", "TSLA", "DUOL", "AMD", "META", "AMZN", "ASTS"]
     selected_ticker = None
     cols = st.columns(2)
-    for i, t in enumerate(DEFAULT_WATCHLIST):
+    for i, t in enumerate(WATCHLIST):
         if cols[i % 2].button(t, key=f"wb_{t}", use_container_width=True):
             selected_ticker = t
 
     st.markdown("---")
-    st.markdown("### 🔍 Or Enter Ticker")
+    st.markdown("### 🔍 Enter Ticker")
     manual_ticker = st.text_input("Ticker Symbol", placeholder="e.g. AAPL").upper().strip()
 
     st.markdown("---")
-    st.markdown("### 🎯 Analysis Depth")
-    depth = st.select_slider("Agent Reasoning Depth",
+    depth = st.select_slider("🎯 Analysis Depth",
                              options=["Quick", "Standard", "Deep"],
                              value="Standard")
-    depth_tokens = {"Quick": 600, "Standard": 1000, "Deep": 1500}
+    DEPTH_TOKENS = {"Quick": 600, "Standard": 1000, "Deep": 1500}
 
     st.markdown("---")
-    st.markdown("### ℹ️ About")
-    st.caption("**US Stock Analyzer v1**\nMulti-Agent system powered by Claude.\n\nAgents: Fundamental · Technical · News · Sentiment → Bull/Bear Debate → Risk Judge")
+    st.caption("**US Stock Analyzer v1**\nMulti-Agent powered by Claude.\n\nFlow: Fundamental · Technical · News · Sentiment → Bull/Bear → Risk Judge")
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+
+# ── Main header ───────────────────────────────────────────────────────────────
 st.markdown("# 📊 US Stock Multi-Agent Analyzer")
-st.markdown("*Powered by Claude · Multi-Agent Debate Framework*")
+st.markdown("*Powered by Claude · 7-Agent Debate Framework*")
 
 ticker = manual_ticker if manual_ticker else (selected_ticker or "")
 
 if not ticker:
-    st.info("👈 Select a ticker from the watchlist or enter one manually to begin analysis.")
-    
-    st.markdown("---")
-    st.markdown("### 🚀 How It Works")
+    st.info("👈 Pilih ticker dari watchlist atau ketik manual untuk mulai analisa.")
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown("**1️⃣ Data Collection**\n\nPrice data, financials, and technicals via yfinance")
-    with c2:
-        st.markdown("**2️⃣ Specialist Agents**\n\nFundamental, Technical, Sentiment analysts work in parallel")
-    with c3:
-        st.markdown("**3️⃣ Bull/Bear Debate**\n\nTwo researcher agents argue opposing sides")
-    with c4:
-        st.markdown("**4️⃣ Risk Judge**\n\nFinal decision with tiered entry plan & stop-loss")
+    c1.markdown("**1️⃣ Data**\nyfinance: price, fundamentals & news")
+    c2.markdown("**2️⃣ Analysts**\nFundamental · Technical · News · Sentiment")
+    c3.markdown("**3️⃣ Debate**\nBull Researcher vs Bear Researcher")
+    c4.markdown("**4️⃣ Decision**\nRisk Judge → Entry · Stop · Target")
     st.stop()
 
 if not api_key:
-    st.warning("⚠️ Please enter your Anthropic API key in the sidebar to run the analysis.")
+    st.warning("⚠️ Masukkan Anthropic API key di sidebar.")
     st.stop()
 
-# ── Data Fetching ─────────────────────────────────────────────────────────────
+
+# ── Data fetch ────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def get_stock_data(ticker: str):
     try:
-        tk = yf.Ticker(ticker)
-        info = tk.info
+        tk   = yf.Ticker(ticker)
+        info = tk.info or {}
         hist = tk.history(period="6mo", interval="1d")
-        hist_1y = tk.history(period="1y", interval="1d")
-        
         if hist.empty:
-            return None, None, None, None
-        
-        # Technical indicators
-        hist.ta.rsi(append=True)
-        hist.ta.macd(append=True)
-        hist.ta.bbands(append=True)
-        hist.ta.sma(length=20, append=True)
-        hist.ta.sma(length=50, append=True)
-        hist.ta.sma(length=200, append=True)
-        hist.ta.atr(append=True)
-        
-        # Earnings
+            return None, None, []
+        hist = calc_indicators(hist)
+        news = []
         try:
-            earnings = tk.earnings_dates
-        except:
-            earnings = None
-            
-        return info, hist, hist_1y, earnings
+            news = tk.news[:8] if tk.news else []
+        except Exception:
+            pass
+        return info, hist, news
     except Exception as e:
-        return None, None, None, None
+        st.error(f"Error fetching {ticker}: {e}")
+        return None, None, []
 
-@st.cache_data(ttl=300)
-def get_news(ticker: str):
+
+def safe(v, fmt=".2f"):
     try:
-        tk = yf.Ticker(ticker)
-        news = tk.news
-        if news:
-            return news[:8]
-        return []
-    except:
-        return []
+        return f"{v:{fmt}}" if v is not None and pd.notna(v) else "N/A"
+    except Exception:
+        return "N/A"
 
-# ── Agent Calls ───────────────────────────────────────────────────────────────
-def call_agent(client, system_prompt: str, user_prompt: str, max_tokens: int = 1000) -> str:
-    try:
-        msg = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}]
-        )
-        return msg.content[0].text
-    except Exception as e:
-        return f"[Agent error: {str(e)}]"
 
-def build_data_context(ticker, info, hist, news_items) -> str:
-    close = hist["Close"].iloc[-1]
-    prev  = hist["Close"].iloc[-2]
-    chg   = (close - prev) / prev * 100
-    
-    sma20  = hist.get("SMA_20",  pd.Series([None])).iloc[-1]
-    sma50  = hist.get("SMA_50",  pd.Series([None])).iloc[-1]
-    sma200 = hist.get("SMA_200", pd.Series([None])).iloc[-1]
-    rsi    = hist.filter(like="RSI").iloc[-1, 0] if not hist.filter(like="RSI").empty else None
-    atr    = hist.filter(like="ATRr").iloc[-1, 0] if not hist.filter(like="ATRr").empty else None
-    macd   = hist.filter(like="MACD_").iloc[-1, 0] if not hist.filter(like="MACD_").empty else None
-    bb_up  = hist.filter(like="BBU").iloc[-1, 0] if not hist.filter(like="BBU").empty else None
-    bb_lo  = hist.filter(like="BBL").iloc[-1, 0] if not hist.filter(like="BBL").empty else None
-    bb_mid = hist.filter(like="BBM").iloc[-1, 0] if not hist.filter(like="BBM").empty else None
-    
-    vol_avg = hist["Volume"].tail(20).mean()
-    vol_now = hist["Volume"].iloc[-1]
-    
-    safe = lambda v, fmt=".2f": f"{v:{fmt}}" if v is not None and pd.notna(v) else "N/A"
-    
-    news_text = "\n".join([f"- {n.get('title','')}" for n in news_items[:5]]) or "No recent news"
-    
-    fundamentals = {
-        "Market Cap":    info.get("marketCap"),
-        "Forward P/E":   info.get("forwardPE"),
-        "Trailing P/E":  info.get("trailingPE"),
-        "PEG Ratio":     info.get("pegRatio"),
-        "Revenue Growth":info.get("revenueGrowth"),
-        "EPS Forward":   info.get("forwardEps"),
-        "Profit Margin": info.get("profitMargins"),
-        "Debt/Equity":   info.get("debtToEquity"),
-        "Free Cash Flow":info.get("freeCashflow"),
-        "52W High":      info.get("fiftyTwoWeekHigh"),
-        "52W Low":       info.get("fiftyTwoWeekLow"),
-        "Analyst Target":info.get("targetMeanPrice"),
-        "Recommendation":info.get("recommendationKey"),
-        "Sector":        info.get("sector"),
-        "Industry":      info.get("industry"),
+def build_context(ticker, info, hist, news) -> str:
+    c    = hist["Close"].iloc[-1]
+    prev = hist["Close"].iloc[-2]
+    chg  = (c - prev) / prev * 100
+
+    rsi    = hist["RSI"].iloc[-1]
+    sma20  = hist["SMA20"].iloc[-1]
+    sma50  = hist["SMA50"].iloc[-1]
+    sma200 = hist["SMA200"].iloc[-1]
+    atr    = hist["ATR"].iloc[-1]
+    macd   = hist["MACD"].iloc[-1]
+    bb_up  = hist["BB_UP"].iloc[-1]
+    bb_lo  = hist["BB_LO"].iloc[-1]
+    vol20  = hist["Volume"].tail(20).mean()
+    vol    = hist["Volume"].iloc[-1]
+
+    p200 = (c / sma200 - 1) * 100 if pd.notna(sma200) and sma200 > 0 else None
+
+    rsi_flag = ("⚠️ OVERBOUGHT" if pd.notna(rsi) and rsi > 70
+                else ("⚠️ OVERSOLD" if pd.notna(rsi) and rsi < 30 else ""))
+    bb_flag  = ("Above upper band ⚠️" if pd.notna(bb_up) and c > bb_up
+                else ("Below lower band 🟢" if pd.notna(bb_lo) and c < bb_lo
+                      else "Within bands"))
+
+    fund = {
+        "Sector":         info.get("sector"),
+        "Industry":       info.get("industry"),
+        "Market Cap":     f"${info.get('marketCap',0)/1e9:.1f}B" if info.get("marketCap") else None,
+        "Forward P/E":    info.get("forwardPE"),
+        "Trailing P/E":   info.get("trailingPE"),
+        "PEG Ratio":      info.get("pegRatio"),
+        "EPS (fwd)":      info.get("forwardEps"),
+        "Revenue Growth": f"{info.get('revenueGrowth',0)*100:.1f}%" if info.get("revenueGrowth") else None,
+        "Profit Margin":  f"{info.get('profitMargins',0)*100:.1f}%" if info.get("profitMargins") else None,
+        "Debt/Equity":    info.get("debtToEquity"),
+        "Free Cash Flow": f"${info.get('freeCashflow',0)/1e9:.2f}B" if info.get("freeCashflow") else None,
+        "52W High":       info.get("fiftyTwoWeekHigh"),
+        "52W Low":        info.get("fiftyTwoWeekLow"),
+        "Analyst Target": info.get("targetMeanPrice"),
+        "Recommendation": info.get("recommendationKey"),
+        "Beta":           info.get("beta"),
     }
-    
-    fund_str = "\n".join([f"  {k}: {v}" for k, v in fundamentals.items() if v is not None])
-    
+    fund_str = "\n".join(f"  {k}: {v}" for k, v in fund.items() if v is not None)
+    news_str = "\n".join(f"- {n.get('title','')}" for n in news[:5]) or "No recent news"
+
     return f"""
-=== {ticker} MARKET DATA ({datetime.now().strftime('%Y-%m-%d')}) ===
+=== {ticker} DATA ({datetime.now().strftime('%Y-%m-%d')}) ===
 
-PRICE ACTION:
-  Current Price: ${safe(close)}
+PRICE:
+  Current:       ${safe(c)}
   Daily Change:  {safe(chg)}%
-  Volume:        {safe(vol_now, ',.0f')} (20d avg: {safe(vol_avg, ',.0f')})
+  Volume:        {safe(vol,',.0f')} (20d avg: {safe(vol20,',.0f')})
 
-TECHNICAL INDICATORS:
-  RSI (14):      {safe(rsi)}
-  ATR (14):      {safe(atr)}
+TECHNICALS:
+  RSI(14):       {safe(rsi)} {rsi_flag}
+  ATR(14):       {safe(atr)}
   MACD:          {safe(macd)}
   SMA 20:        {safe(sma20)}
   SMA 50:        {safe(sma50)}
   SMA 200:       {safe(sma200)}
+  Price vs 200d: {safe(p200)}%
   BB Upper:      {safe(bb_up)}
-  BB Middle:     {safe(bb_mid)}
   BB Lower:      {safe(bb_lo)}
-  Price vs 200d: {safe((close/sma200 - 1)*100 if sma200 else None)}%
+  BB Position:   {bb_flag}
 
 FUNDAMENTALS:
 {fund_str}
 
-RECENT NEWS (last 5):
-{news_text}
+NEWS (recent):
+{news_str}
 """
+
 
 # ── Chart ─────────────────────────────────────────────────────────────────────
 def render_chart(hist, ticker):
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                        row_heights=[0.6, 0.2, 0.2],
-                        vertical_spacing=0.03)
-    
-    # Candlestick
+                        row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
+
     fig.add_trace(go.Candlestick(
         x=hist.index, open=hist["Open"], high=hist["High"],
-        low=hist["Low"], close=hist["Close"],
-        name="Price", increasing_line_color="#00d084",
-        decreasing_line_color="#ff4b6e"), row=1, col=1)
-    
-    # MAs
-    for col_name, color, label in [
-        ("SMA_20", "#f0b429", "SMA20"),
-        ("SMA_50", "#38bdf8", "SMA50"),
-        ("SMA_200","#ff4b6e", "SMA200"),
-    ]:
-        if col_name in hist.columns:
-            fig.add_trace(go.Scatter(x=hist.index, y=hist[col_name],
-                                     line=dict(color=color, width=1.2),
-                                     name=label, opacity=0.9), row=1, col=1)
-    
-    # BB
-    bb_up = hist.filter(like="BBU")
-    bb_lo = hist.filter(like="BBL")
-    if not bb_up.empty and not bb_lo.empty:
-        fig.add_trace(go.Scatter(x=hist.index, y=bb_up.iloc[:, 0],
+        low=hist["Low"], close=hist["Close"], name="Price",
+        increasing_line_color="#00d084", decreasing_line_color="#ff4b6e"),
+        row=1, col=1)
+
+    for col, color, lbl in [("SMA20","#f0b429","SMA20"),
+                              ("SMA50","#38bdf8","SMA50"),
+                              ("SMA200","#ff4b6e","SMA200")]:
+        if col in hist.columns:
+            fig.add_trace(go.Scatter(x=hist.index, y=hist[col],
+                                      line=dict(color=color, width=1.3),
+                                      name=lbl, opacity=0.9), row=1, col=1)
+
+    if "BB_UP" in hist.columns:
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_UP"],
                                   line=dict(color="#7c6ff7", width=1, dash="dot"),
-                                  name="BB Upper", opacity=0.6), row=1, col=1)
-        fig.add_trace(go.Scatter(x=hist.index, y=bb_lo.iloc[:, 0],
+                                  name="BB Upper", opacity=0.7), row=1, col=1)
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["BB_LO"],
                                   line=dict(color="#7c6ff7", width=1, dash="dot"),
-                                  name="BB Lower", opacity=0.6,
-                                  fill="tonexty", fillcolor="rgba(124,111,247,0.05)"),
-                      row=1, col=1)
-    
-    # Volume
-    colors = ["#00d084" if c >= o else "#ff4b6e"
-              for c, o in zip(hist["Close"], hist["Open"])]
+                                  fill="tonexty", fillcolor="rgba(124,111,247,0.06)",
+                                  name="BB Lower", opacity=0.7), row=1, col=1)
+
+    clr = ["#00d084" if c >= o else "#ff4b6e"
+           for c, o in zip(hist["Close"], hist["Open"])]
     fig.add_trace(go.Bar(x=hist.index, y=hist["Volume"],
-                          name="Volume", marker_color=colors, opacity=0.6),
+                          marker_color=clr, name="Volume", opacity=0.65),
                   row=2, col=1)
-    
-    # RSI
-    rsi_col = hist.filter(like="RSI")
-    if not rsi_col.empty:
-        fig.add_trace(go.Scatter(x=hist.index, y=rsi_col.iloc[:, 0],
+
+    if "RSI" in hist.columns:
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["RSI"],
                                   line=dict(color="#fb923c", width=1.5),
                                   name="RSI"), row=3, col=1)
-        fig.add_hline(y=70, line_color="#ff4b6e", line_dash="dot",
-                      line_width=1, row=3, col=1)
-        fig.add_hline(y=30, line_color="#00d084", line_dash="dot",
-                      line_width=1, row=3, col=1)
-    
+        for lvl, clr2 in [(70, "#ff4b6e"), (30, "#00d084"), (50, "#4a4f5c")]:
+            fig.add_hline(y=lvl, line_color=clr2, line_dash="dot",
+                          line_width=1, row=3, col=1)
+
     fig.update_layout(
         template="plotly_dark",
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        height=550,
-        showlegend=True,
-        legend=dict(orientation="h", y=1.02, x=0),
+        paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+        height=560, showlegend=True,
+        legend=dict(orientation="h", y=1.02, x=0, font=dict(size=11)),
         xaxis_rangeslider_visible=False,
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin=dict(l=0, r=0, t=40, b=0),
         title=dict(text=f"{ticker} – 6 Month Chart", x=0.5,
-                   font=dict(size=14, color="#e2e8f0"))
+                   font=dict(size=14, color="#e2e8f0")),
     )
-    fig.update_yaxes(gridcolor="#1e2129", row=1, col=1)
-    fig.update_yaxes(gridcolor="#1e2129", row=2, col=1)
-    fig.update_yaxes(gridcolor="#1e2129", row=3, col=1, range=[0, 100])
-    
+    for r in [1, 2, 3]:
+        fig.update_yaxes(gridcolor="#1e2129", row=r, col=1)
+    fig.update_yaxes(range=[0, 100], row=3, col=1)
     return fig
 
-# ── Run Analysis ──────────────────────────────────────────────────────────────
-run_btn = st.button(f"🚀 Run Multi-Agent Analysis: {ticker}", type="primary",
-                    use_container_width=True)
 
-if run_btn:
-    client = anthropic.Anthropic(api_key=api_key)
-    max_tok = depth_tokens[depth]
-    
-    # 1. Fetch Data
+# ── Agent call ────────────────────────────────────────────────────────────────
+def call_agent(client, system: str, user: str, max_tokens: int) -> str:
+    try:
+        msg = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return msg.content[0].text
+    except Exception as e:
+        return f"[Agent error: {e}]"
+
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+if st.button(f"🚀 Run Analysis: {ticker}", type="primary", use_container_width=True):
+    client  = anthropic.Anthropic(api_key=api_key)
+    max_tok = DEPTH_TOKENS[depth]
+
     with st.spinner("📡 Fetching market data..."):
-        info, hist, hist_1y, earnings = get_stock_data(ticker)
-        news_items = get_news(ticker)
-    
+        info, hist, news = get_stock_data(ticker)
+
     if hist is None or hist.empty:
-        st.error(f"❌ Could not fetch data for **{ticker}**. Please check the ticker symbol.")
+        st.error(f"❌ Tidak bisa fetch data untuk **{ticker}**.")
         st.stop()
-    
-    company_name = info.get("longName", ticker)
-    current_price = hist["Close"].iloc[-1]
-    data_ctx = build_data_context(ticker, info, hist, news_items)
-    
-    # ── Header ──
-    st.markdown(f"## {company_name} ({ticker})")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    prev_close = hist["Close"].iloc[-2]
-    daily_chg  = (current_price - prev_close) / prev_close * 100
-    
-    col1.metric("Current Price",  f"${current_price:.2f}", f"{daily_chg:+.2f}%")
-    col2.metric("Market Cap",     f"${info.get('marketCap', 0)/1e9:.1f}B" if info.get('marketCap') else "N/A")
-    col3.metric("Forward P/E",    f"{info.get('forwardPE', 'N/A'):.1f}" if info.get('forwardPE') else "N/A")
-    col4.metric("52W High",       f"${info.get('fiftyTwoWeekHigh', 0):.2f}" if info.get('fiftyTwoWeekHigh') else "N/A")
-    
-    rsi_val = hist.filter(like="RSI").iloc[-1, 0] if not hist.filter(like="RSI").empty else None
-    col5.metric("RSI (14)",       f"{rsi_val:.1f}" if rsi_val else "N/A",
-                "Overbought" if rsi_val and rsi_val > 70 else
-                ("Oversold" if rsi_val and rsi_val < 30 else "Neutral"))
-    
-    # Chart
+
+    company   = info.get("longName", ticker)
+    price     = hist["Close"].iloc[-1]
+    prev      = hist["Close"].iloc[-2]
+    chg       = (price - prev) / prev * 100
+    ctx       = build_context(ticker, info, hist, news)
+
+    # Header
+    st.markdown(f"## {company} ({ticker})")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Price",       f"${price:.2f}", f"{chg:+.2f}%")
+    m2.metric("Market Cap",  f"${info.get('marketCap',0)/1e9:.1f}B" if info.get("marketCap") else "N/A")
+    m3.metric("Forward P/E", f"{info.get('forwardPE'):.1f}" if info.get("forwardPE") else "N/A")
+    m4.metric("52W High",    f"${info.get('fiftyTwoWeekHigh'):.2f}" if info.get("fiftyTwoWeekHigh") else "N/A")
+    rsi_now = hist["RSI"].iloc[-1]
+    m5.metric("RSI(14)", f"{rsi_now:.1f}" if pd.notna(rsi_now) else "N/A",
+              "Overbought" if pd.notna(rsi_now) and rsi_now > 70 else
+              ("Oversold"  if pd.notna(rsi_now) and rsi_now < 30 else "Neutral"))
+
     st.plotly_chart(render_chart(hist, ticker), use_container_width=True)
-    
     st.markdown("---")
-    st.markdown("## 🤖 Agent Analysis")
-    
-    results = {}
+    st.markdown("## 🤖 Multi-Agent Analysis")
+
+    results  = {}
     progress = st.progress(0)
     status   = st.empty()
-    
-    # ── Agent 1: Fundamental ──────────────────────────────────────────────────
-    status.markdown("**1/7** 📈 Fundamental Analyst working...")
-    results["fundamental"] = call_agent(client,
-        system_prompt="""You are a Senior Fundamental Analyst specializing in US equities.
-Analyze the stock data provided. Focus on:
-- Valuation (P/E, PEG, forward estimates)
-- Growth metrics and quality of earnings
-- Balance sheet health (debt, FCF)
-- Competitive moat assessment
-- Intrinsic value vs current price
-Be concise but data-driven. End with a clear BULLISH / BEARISH / NEUTRAL stance.""",
-        user_prompt=f"Perform fundamental analysis on {ticker}:\n{data_ctx}",
-        max_tokens=max_tok)
+
+    # 1 ── Fundamental
+    status.markdown("⏳ **[1/7]** 📈 Fundamental Analyst...")
+    results["fund"] = call_agent(client,
+        system="""You are a Senior Fundamental Analyst specializing in US equities.
+Analyze the stock data. Cover:
+- Valuation (P/E, PEG vs peers & growth rate)
+- Revenue & earnings quality and trajectory
+- Balance sheet: FCF generation, debt burden
+- Competitive moat & sector positioning
+- Intrinsic value estimate vs current price
+Be data-driven. End with BULLISH / BEARISH / NEUTRAL verdict.""",
+        user=f"Fundamental analysis for {ticker}:\n{ctx}", max_tokens=max_tok)
     progress.progress(1/7)
-    
-    # ── Agent 2: Technical ────────────────────────────────────────────────────
-    status.markdown("**2/7** 📉 Technical Analyst working...")
-    results["technical"] = call_agent(client,
-        system_prompt="""You are a Senior Technical Analyst with 20+ years of market experience.
-Analyze the technical indicators provided. Focus on:
-- Trend analysis (price vs MAs, golden/death cross)
-- Momentum (RSI, MACD signals)
-- Volatility (ATR, Bollinger Band positioning)
-- Support and resistance levels
-- Entry/exit price levels
-Be specific with price targets. End with BULLISH / BEARISH / NEUTRAL.""",
-        user_prompt=f"Perform technical analysis on {ticker}:\n{data_ctx}",
-        max_tokens=max_tok)
+
+    # 2 ── Technical
+    status.markdown("⏳ **[2/7]** 📉 Technical Analyst...")
+    results["tech"] = call_agent(client,
+        system="""You are a Senior Technical Analyst with 20 years of experience.
+Analyze technical indicators. Cover:
+- Trend structure (price vs SMAs, MA alignment/crossovers)
+- Momentum (RSI level & divergence, MACD crossover)
+- Volatility (ATR, Bollinger Band position/squeeze)
+- Key support & resistance price levels
+- Specific entry zone and stop-loss price
+Give concrete price numbers. End with BULLISH / BEARISH / NEUTRAL.""",
+        user=f"Technical analysis for {ticker}:\n{ctx}", max_tokens=max_tok)
     progress.progress(2/7)
-    
-    # ── Agent 3: News/Macro ───────────────────────────────────────────────────
-    status.markdown("**3/7** 📰 News & Macro Analyst working...")
+
+    # 3 ── News
+    status.markdown("⏳ **[3/7]** 📰 News & Macro Analyst...")
     results["news"] = call_agent(client,
-        system_prompt="""You are a News and Macro Analyst covering US equities.
-Analyze the recent headlines and assess:
-- Key catalysts (positive or negative)
-- Sector/macro tailwinds or headwinds
-- Regulatory or competitive risks
-- Upcoming events (earnings, product launches, macro data)
-- Sentiment from news flow
+        system="""You are a News and Macro Analyst covering US equities.
+Assess news headlines and macro backdrop. Cover:
+- Key near-term catalysts (positive & negative)
+- Sector tailwinds or headwinds
+- Regulatory, competitive, or geopolitical risks
+- Upcoming events (earnings date, product launches, Fed)
+- Overall news sentiment signal
 End with BULLISH / BEARISH / NEUTRAL.""",
-        user_prompt=f"Analyze news and macro context for {ticker}:\n{data_ctx}",
-        max_tokens=max_tok)
+        user=f"News & macro analysis for {ticker}:\n{ctx}", max_tokens=max_tok)
     progress.progress(3/7)
-    
-    # ── Agent 4: Sentiment ────────────────────────────────────────────────────
-    status.markdown("**4/7** 💬 Sentiment Analyst working...")
-    results["sentiment"] = call_agent(client,
-        system_prompt="""You are a Market Sentiment Analyst.
-Based on available data, assess:
-- Institutional vs retail sentiment
-- Short interest implications
-- Analyst consensus and price target spread
-- Volume and momentum signals as sentiment proxies
-- Contrarian indicators (extreme bullish = bearish signal, etc.)
+
+    # 4 ── Sentiment
+    status.markdown("⏳ **[4/7]** 💬 Sentiment Analyst...")
+    results["sent"] = call_agent(client,
+        system="""You are a Market Sentiment Analyst.
+Assess sentiment using available proxies. Cover:
+- Analyst consensus & price target spread vs current price
+- Volume trend as institutional activity proxy
+- Momentum sentiment (RSI extremes as crowd behavior signals)
+- Short squeeze potential or crowded-long risk
+- Contrarian angle: is consensus too bullish/bearish?
 End with BULLISH / BEARISH / NEUTRAL.""",
-        user_prompt=f"Assess market sentiment for {ticker}:\n{data_ctx}",
-        max_tokens=max_tok)
+        user=f"Sentiment analysis for {ticker}:\n{ctx}", max_tokens=max_tok)
     progress.progress(4/7)
-    
-    # ── Agent 5: Bull Researcher ───────────────────────────────────────────────
-    status.markdown("**5/7** 🐂 Bull Researcher building case...")
-    bull_ctx = f"""
-ANALYST REPORTS SUMMARY:
-FUNDAMENTAL: {results['fundamental'][:500]}
-TECHNICAL: {results['technical'][:500]}
-NEWS: {results['news'][:500]}
-SENTIMENT: {results['sentiment'][:500]}
-"""
+
+    # Summary for debate
+    summary = (f"FUNDAMENTAL: {results['fund'][:500]}\n"
+               f"TECHNICAL:   {results['tech'][:500]}\n"
+               f"NEWS:        {results['news'][:500]}\n"
+               f"SENTIMENT:   {results['sent'][:500]}")
+
+    # 5 ── Bull
+    status.markdown("⏳ **[5/7]** 🐂 Bull Researcher...")
     results["bull"] = call_agent(client,
-        system_prompt="""You are a Bull Researcher — your job is to make the strongest possible BULLISH case.
-Use the analyst reports and data to argue WHY this stock should be bought NOW.
-Highlight the most compelling upside catalysts, growth drivers, and technical setups.
-Be aggressive but grounded in facts. 3-5 bullet points with your top bull arguments.""",
-        user_prompt=f"Make the bull case for {ticker}:\n{data_ctx}\n{bull_ctx}",
+        system="""You are the Bull Researcher at a professional trading firm.
+Build the STRONGEST possible bullish case. Be aggressive but factual.
+Present 4-5 bullet points — your best arguments for buying NOW.
+Focus on what bears are missing, underweighting, or wrong about.""",
+        user=f"Bull case for {ticker} @ ${price:.2f}:\n{ctx}\n\nANALYST SUMMARY:\n{summary}",
         max_tokens=max_tok)
     progress.progress(5/7)
-    
-    # ── Agent 6: Bear Researcher ──────────────────────────────────────────────
-    status.markdown("**6/7** 🐻 Bear Researcher building case...")
+
+    # 6 ── Bear
+    status.markdown("⏳ **[6/7]** 🐻 Bear Researcher...")
     results["bear"] = call_agent(client,
-        system_prompt="""You are a Bear Researcher — your job is to make the strongest possible BEARISH case.
-Use the analyst reports and data to argue WHY this stock is risky or should be avoided/sold.
-Highlight valuation concerns, technical red flags, macro risks, and downside scenarios.
-Be incisive but factual. 3-5 bullet points with your top bear arguments.""",
-        user_prompt=f"Make the bear case for {ticker}:\n{data_ctx}\n{bull_ctx}",
+        system="""You are the Bear Researcher at a professional trading firm.
+Build the STRONGEST possible bearish case. Be incisive but factual.
+Present 4-5 bullet points — your best arguments for avoiding or selling.
+Focus on what bulls are ignoring, rationalizing, or getting wrong.""",
+        user=f"Bear case for {ticker} @ ${price:.2f}:\n{ctx}\n\nANALYST SUMMARY:\n{summary}",
         max_tokens=max_tok)
     progress.progress(6/7)
-    
-    # ── Agent 7: Risk Judge (Final Decision) ──────────────────────────────────
-    status.markdown("**7/7** ⚖️ Risk Judge deliberating final decision...")
-    judge_ctx = f"""
-FULL ANALYST REPORTS:
-=== FUNDAMENTAL ===
-{results['fundamental']}
 
-=== TECHNICAL ===
-{results['technical']}
-
-=== NEWS & MACRO ===
-{results['news']}
-
-=== SENTIMENT ===
-{results['sentiment']}
-
-=== BULL CASE ===
-{results['bull']}
-
-=== BEAR CASE ===
-{results['bear']}
-"""
+    # 7 ── Risk Judge
+    status.markdown("⏳ **[7/7]** ⚖️ Risk Judge — Final Decision...")
+    full = (f"MARKET DATA:\n{ctx}\n\n"
+            f"ANALYST REPORTS:\n{summary}\n\n"
+            f"BULL CASE:\n{results['bull']}\n\n"
+            f"BEAR CASE:\n{results['bear']}")
     results["judge"] = call_agent(client,
-        system_prompt="""You are the Chief Risk Officer and final decision-maker for a professional trading firm.
-You have reviewed all analyst reports and the bull/bear debate.
-Your job is to deliver a FINAL TRADE DECISION with:
+        system="""You are the Chief Risk Officer delivering the final trade decision.
+Review all reports and the bull/bear debate. Structure your output EXACTLY as:
 
-1. DECISION: BUY / HOLD / SELL (with conviction level: HIGH/MEDIUM/LOW)
-2. RATIONALE: 2-3 sentences on why this outweighs the opposition
+1. DECISION: BUY / HOLD / SELL  |  Conviction: HIGH / MEDIUM / LOW
+2. RATIONALE: Why this side wins (2-3 sentences)
 3. ENTRY PLAN:
-   - Immediate entry %
-   - Limit order levels (if applicable)
+   - Immediate entry: X% of intended position
+   - Limit order(s): $XX.XX level(s) for remainder
 4. RISK MANAGEMENT:
-   - Hard stop-loss price level
-   - Key invalidation scenario
-5. PROFIT TARGET:
-   - Primary target price
-   - Trim level (partial profit taking)
-6. KEY RISK TO WATCH: The #1 thing that would change your mind
+   - Hard stop-loss: $XX.XX
+   - Thesis invalidation: [specific scenario]
+5. PROFIT TARGETS:
+   - Primary target: $XX.XX
+   - Trim 25-30% at: $XX.XX
+6. #1 RISK TO MONITOR: [single most important forward risk]
 
-Be decisive. Be specific with price levels. Use the current price data.""",
-        user_prompt=f"Make final trade decision for {ticker} (current price ${current_price:.2f}):\n{data_ctx}\n{judge_ctx}",
-        max_tokens=max_tok + 200)
+Be specific with price levels. Be decisive. No hedging.""",
+        user=f"Final decision for {ticker} @ ${price:.2f}:\n{full}",
+        max_tokens=max_tok + 300)
     progress.progress(7/7)
     status.empty()
     progress.empty()
-    
-    # ── Render Results ─────────────────────────────────────────────────────────
-    
-    # Determine decision color
-    judge_text = results["judge"].upper()
-    if "BUY" in judge_text[:200]:
-        dec_class = "decision-buy";  dec_icon = "🟢"
-    elif "SELL" in judge_text[:200]:
-        dec_class = "decision-sell"; dec_icon = "🔴"
+
+    # ── Render ────────────────────────────────────────────────────────────────
+    j_up = results["judge"].upper()
+    if "BUY" in j_up[:300]:
+        dcls, dicon, dlbl = "decision-buy",  "🟢", "BUY"
+    elif "SELL" in j_up[:300]:
+        dcls, dicon, dlbl = "decision-sell", "🔴", "SELL"
     else:
-        dec_class = "decision-hold"; dec_icon = "🟡"
-    
-    # Final Decision Box
+        dcls, dicon, dlbl = "decision-hold", "🟡", "HOLD"
+
     st.markdown(f"""
-<div class="{dec_class}">
-<h2>{dec_icon} FINAL DECISION</h2>
-{results['judge'].replace(chr(10), '<br>')}
+<div class="{dcls}">
+<h2>{dicon} FINAL DECISION — {dlbl}</h2>
+<p style="white-space:pre-wrap;line-height:1.8">{results['judge']}</p>
 </div>
 """, unsafe_allow_html=True)
-    
+
     st.markdown("---")
-    
-    # Bull / Bear
-    col_bull, col_bear = st.columns(2)
-    with col_bull:
-        st.markdown("""<div class="agent-card">
-<div class="agent-header bull">🐂 Bull Researcher</div>""", unsafe_allow_html=True)
+    cb, cs = st.columns(2)
+    with cb:
+        st.markdown('<div class="agent-card"><div class="agent-header bull">🐂 Bull Researcher</div>',
+                    unsafe_allow_html=True)
         st.markdown(results["bull"])
         st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col_bear:
-        st.markdown("""<div class="agent-card">
-<div class="agent-header bear">🐻 Bear Researcher</div>""", unsafe_allow_html=True)
+    with cs:
+        st.markdown('<div class="agent-card"><div class="agent-header bear">🐻 Bear Researcher</div>',
+                    unsafe_allow_html=True)
         st.markdown(results["bear"])
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     st.markdown("---")
-    
-    # 4 Analyst Reports
     st.markdown("### 📋 Specialist Analyst Reports")
-    ta1, ta2, ta3, ta4 = st.tabs([
-        "📈 Fundamental", "📉 Technical", "📰 News & Macro", "💬 Sentiment"
-    ])
-    
-    with ta1:
-        st.markdown(f"""<div class="agent-card">
-<div class="agent-header fund">Fundamental Analyst</div>
-{results['fundamental']}
-</div>""", unsafe_allow_html=True)
-    
-    with ta2:
-        st.markdown(f"""<div class="agent-card">
-<div class="agent-header tech">Technical Analyst</div>
-{results['technical']}
-</div>""", unsafe_allow_html=True)
-    
-    with ta3:
-        st.markdown(f"""<div class="agent-card">
-<div class="agent-header news">News & Macro Analyst</div>
-{results['news']}
-</div>""", unsafe_allow_html=True)
-    
-    with ta4:
-        st.markdown(f"""<div class="agent-card">
-<div class="agent-header sent">Sentiment Analyst</div>
-{results['sentiment']}
-</div>""", unsafe_allow_html=True)
-    
-    # Raw Data Expander
+    t1, t2, t3, t4 = st.tabs(["📈 Fundamental", "📉 Technical", "📰 News & Macro", "💬 Sentiment"])
+    for tab, key, cls, lbl in [
+        (t1, "fund", "fund",  "Fundamental Analyst"),
+        (t2, "tech", "tech",  "Technical Analyst"),
+        (t3, "news", "newsc", "News & Macro Analyst"),
+        (t4, "sent", "sent",  "Sentiment Analyst"),
+    ]:
+        with tab:
+            st.markdown(
+                f'<div class="agent-card"><div class="agent-header {cls}">{lbl}</div>\n\n'
+                f'{results[key]}</div>',
+                unsafe_allow_html=True)
+
     with st.expander("🔬 Raw Market Data Used by Agents"):
-        st.code(data_ctx, language="text")
-    
-    # Footer
+        st.code(ctx, language="text")
+
     st.markdown("---")
-    st.caption(f"Analysis generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Model: claude-sonnet-4-20250514 · Depth: {depth} · ⚠️ For educational purposes only. Not financial advice.")
+    st.caption(
+        f"⏱ {datetime.now().strftime('%Y-%m-%d %H:%M')}  ·  "
+        f"Model: claude-sonnet-4-20250514  ·  Depth: {depth}  ·  "
+        f"⚠️ Educational purposes only. Not financial advice."
+    )
