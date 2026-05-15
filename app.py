@@ -245,7 +245,7 @@ ticker = manual_ticker if manual_ticker else (selected_ticker or "")
 
 if not ticker:
     # ── Portfolio Performance Dashboard ──────────────────────────────────────
-    st.markdown("## 📈 Portfolio Performance")
+    #st.markdown("## 📈 Portfolio Performance")
 
     @st.cache_data(ttl=600)
     def fetch_price_history(tickers, period):
@@ -388,7 +388,7 @@ if not ticker:
         st.plotly_chart(fig, use_container_width=True)
 
         # ── WMA200 Cards ──────────────────────────────────────────────────────
-        st.markdown("### 📐 Price vs WMA 200")
+        #st.markdown("### 📐 Price vs WMA 200")
 
         @st.cache_data(ttl=600)
         def fetch_wma200(tickers):
