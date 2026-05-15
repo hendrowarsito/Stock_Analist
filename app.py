@@ -430,41 +430,66 @@ if not ticker:
                 return "#64748b", "N/A"
             return ("#16a34a" if val >= 0 else "#dc2626"), f"{val:+.2f}%"
 
-        tickers_wma  = list(HOLDINGS.keys())
-        cols_per_row = 3
-        for row_start in range(0, len(tickers_wma), cols_per_row):
-            row_tickers = tickers_wma[row_start : row_start + cols_per_row]
-            cols = st.columns(cols_per_row)
-            for col, t in zip(cols, row_tickers):
-                d = wma_data.get(t, {})
-                price            = d.get("price")
-                d_color, d_str   = pct_badge(d.get("d_pct"))
-                w_color, w_str   = pct_badge(d.get("w_pct"))
-                px_str           = f"${price:,.2f}" if price else "–"
-                with col:
-                    st.markdown(
-                        f'<div style="background:#ffffff;border:1px solid #e2e8f0;'
-                        f'border-radius:12px;padding:16px 18px;'
-                        f'box-shadow:0 1px 4px rgba(0,0,0,0.06);margin-bottom:10px;">'
-                        f'<div style="font-size:18px;font-weight:800;color:#1e293b;'
-                        f'margin-bottom:2px;">{t}</div>'
-                        f'<div style="font-size:22px;font-weight:700;color:#0f172a;'
-                        f'margin-bottom:10px;">{px_str}</div>'
-                        f'<div style="display:flex;justify-content:space-between;'
-                        f'background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:6px;">'
-                        f'<span style="font-size:11px;font-weight:600;color:#64748b;'
-                        f'text-transform:uppercase;letter-spacing:0.8px;">Daily WMA200</span>'
-                        f'<span style="font-size:13px;font-weight:700;color:{d_color};">{d_str}</span>'
-                        f'</div>'
-                        f'<div style="display:flex;justify-content:space-between;'
-                        f'background:#f8fafc;border-radius:8px;padding:8px 10px;">'
-                        f'<span style="font-size:11px;font-weight:600;color:#64748b;'
-                        f'text-transform:uppercase;letter-spacing:0.8px;">Weekly WMA200</span>'
-                        f'<span style="font-size:13px;font-weight:700;color:{w_color};">{w_str}</span>'
-                        f'</div></div>',
-                        unsafe_allow_html=True
-                    )
+        tickers_wma = list(HOLDINGS.keys())
 
+        # Build HTML table – label column + one column per ticker
+        rows = {"Price": {}, "Daily WMA200": {}, "Weekly WMA200": {}}
+        for t in tickers_wma:
+            d = wma_data.get(t, {})
+            price          = d.get("price")
+            d_color, d_str = pct_badge(d.get("d_pct"))
+            w_color, w_str = pct_badge(d.get("w_pct"))
+            rows["Price"][t]        = (f"${price:,.2f}" if price else "–", "#1e293b",  True)
+            rows["Daily WMA200"][t] = (d_str, d_color, False)
+            rows["Weekly WMA200"][t]= (w_str, w_color, False)
+
+        # Header row
+        header_cells = '<th style="background:#f1f5f9;padding:10px 14px;text-align:left;'
+        header_cells += 'font-size:12px;font-weight:700;color:#475569;border:1px solid #e2e8f0;'
+        header_cells += 'min-width:80px;"></th>'
+        for t in tickers_wma:
+            # Highlight NVDA-style: bold border on last? just style each header
+            header_cells += (
+                f'<th style="background:#f1f5f9;padding:10px 14px;text-align:center;'
+                f'font-size:13px;font-weight:800;color:#1e293b;'
+                f'border:1px solid #e2e8f0;min-width:90px;">{t}</th>'
+            )
+
+        # Data rows
+        data_rows_html = ""
+        for row_label, ticker_vals in rows.items():
+            is_price = (row_label == "Price")
+            row_bg   = "#ffffff" if is_price else "#fafafa"
+            lbl_style = (
+                f'font-size:12px;font-weight:{"700" if is_price else "600"};'
+                f'color:#{"1e293b" if is_price else "475569"};'
+                f'padding:10px 14px;border:1px solid #e2e8f0;'
+                f'background:{row_bg};white-space:nowrap;'
+            )
+            data_rows_html += f'<tr><td style="{lbl_style}">{row_label}</td>'
+            for t in tickers_wma:
+                val, color, bold = ticker_vals[t]
+                cell_style = (
+                    f'text-align:center;padding:10px 14px;'
+                    f'border:1px solid #e2e8f0;background:{row_bg};'
+                    f'font-size:{"15px" if is_price else "13px"};'
+                    f'font-weight:{"800" if bold else "700"};'
+                    f'color:{color};'
+                )
+                data_rows_html += f'<td style="{cell_style}">{val}</td>'
+            data_rows_html += '</tr>'
+
+        table_html = f"""
+<div style="overflow-x:auto;margin-top:4px;">
+  <table style="border-collapse:collapse;width:100%;background:#ffffff;
+                border-radius:12px;overflow:hidden;
+                box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+    <thead><tr>{header_cells}</tr></thead>
+    <tbody>{data_rows_html}</tbody>
+  </table>
+</div>
+"""
+        st.markdown(table_html, unsafe_allow_html=True)
     st.markdown("---")
     st.info("👈 Klik ticker di **My Positions** atau ketik di **Other Ticker** untuk analisa detail.")
     st.stop()
