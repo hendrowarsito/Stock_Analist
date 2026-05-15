@@ -332,7 +332,7 @@ if not ticker:
             s     = series_data[t]
             color = COLORS.get(t, DEFAULT_COLORS[i % len(DEFAULT_COLORS)])
             ret   = final_returns[t]
-            label = f"{t} ({ret:+.1f}%)"
+            label = f"{t} ({ret:+.2f}%)"
 
             fig.add_trace(go.Scatter(
                 x=s.index,
@@ -340,7 +340,7 @@ if not ticker:
                 mode="lines",
                 name=label,
                 line=dict(color=color, width=2.2),
-                hovertemplate=f"<b>{t}</b>  |  %{{x|%b %d, %Y}}  |  %{{y:.1f}}  |  %{{customdata:+.1f}}%<extra></extra>",
+                hovertemplate=f"<b>{t}</b>  |  %{{x|%b %d, %Y}}  |  %{{y:.2f}}  |  %{{customdata:+.2f}}%<extra></extra>",
                 customdata=s.values - 100,
             ))
 
@@ -394,8 +394,8 @@ if not ticker:
         losers  = len(final_returns) - gainers
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🏆 Best",    best_t,  f"{final_returns[best_t]:+.1f}%")
-        c2.metric("📉 Worst",   worst_t, f"{final_returns[worst_t]:+.1f}%")
+        c1.metric("🏆 Best",    best_t,  f"{final_returns[best_t]:+.2f}%")
+        c2.metric("📉 Worst",   worst_t, f"{final_returns[worst_t]:+.2f}%")
         c3.metric("🟢 Gainers", f"{gainers} stocks")
         c4.metric("🔴 Losers",  f"{losers} stocks")
 
