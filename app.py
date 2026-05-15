@@ -244,12 +244,162 @@ st.markdown("*Powered by Claude · 7-Agent Debate Framework*")
 ticker = manual_ticker if manual_ticker else (selected_ticker or "")
 
 if not ticker:
-    st.info("👈 Pilih ticker dari watchlist atau ketik manual untuk mulai analisa.")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.markdown("**1️⃣ Data**\nyfinance: price, fundamentals & news")
-    c2.markdown("**2️⃣ Analysts**\nFundamental · Technical · News · Sentiment")
-    c3.markdown("**3️⃣ Debate**\nBull Researcher vs Bear Researcher")
-    c4.markdown("**4️⃣ Decision**\nRisk Judge → Entry · Stop · Target")
+    # ── Portfolio Performance Dashboard ──────────────────────────────────────
+    st.markdown("## 📈 Portfolio Performance")
+
+    @st.cache_data(ttl=600)
+    def fetch_performance(tickers):
+        from datetime import date
+        import pandas as pd
+        result = {}
+        for t in tickers:
+            try:
+                tk   = yf.Ticker(t)
+                hist = tk.history(period="1y", interval="1d")
+                if hist.empty or len(hist) < 5:
+                    continue
+                hist.index = hist.index.tz_localize(None) if hist.index.tzinfo else hist.index
+                close = hist["Close"]
+                today_px = close.iloc[-1]
+
+                # 1 Year
+                yr_px  = close.iloc[0]
+                yr_ret = (today_px / yr_px - 1) * 100
+
+                # YTD  – first trading day of current year
+                ytd_start = pd.Timestamp(f"{date.today().year}-01-01")
+                ytd_hist  = close[close.index >= ytd_start]
+                ytd_ret   = (today_px / ytd_hist.iloc[0] - 1) * 100 if len(ytd_hist) > 1 else 0.0
+
+                # 3 Month
+                mo3_hist = close.iloc[-63:] if len(close) >= 63 else close
+                mo3_ret  = (today_px / mo3_hist.iloc[0] - 1) * 100
+
+                result[t] = {
+                    "price":  today_px,
+                    "1Y":     yr_ret,
+                    "YTD":    ytd_ret,
+                    "3M":     mo3_ret,
+                }
+            except Exception:
+                pass
+        return result
+
+    with st.spinner("📡 Fetching performance data..."):
+        perf = fetch_performance(tuple(HOLDINGS.keys()))
+
+    if perf:
+        import plotly.graph_objects as go
+
+        tickers_sorted = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
+        periods = [("1Y", "1 Year", "#3b82f6"), ("YTD", "Year to Date", "#8b5cf6"), ("3M", "3 Months", "#06b6d4")]
+
+        # ── Tab selector ──
+        tab_1y, tab_ytd, tab_3m, tab_all = st.tabs(["📅 1 Year", "🗓️ Year to Date", "📆 3 Months", "📊 All Periods"])
+
+        def make_bar_chart(period_key, period_label, color_pos, tickers_sorted, perf):
+            labels = tickers_sorted
+            values = [perf[t][period_key] for t in labels]
+            colors = ["#16a34a" if v >= 0 else "#dc2626" for v in values]
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=labels, y=values,
+                marker_color=colors,
+                text=[f"{v:+.1f}%" for v in values],
+                textposition="outside",
+                textfont=dict(size=12, color="#1e293b"),
+                hovertemplate="<b>%{x}</b><br>Return: %{y:.2f}%<extra></extra>",
+            ))
+            fig.add_hline(y=0, line_color="#94a3b8", line_width=1.5)
+            fig.update_layout(
+                title=dict(text=f"Portfolio Return — {period_label}", x=0.5,
+                           font=dict(size=16, color="#1e293b")),
+                paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
+                height=420,
+                yaxis=dict(title="Return (%)", gridcolor="#e2e8f0",
+                           zeroline=False, ticksuffix="%",
+                           color="#475569"),
+                xaxis=dict(gridcolor="#e2e8f0", color="#475569",
+                           tickfont=dict(size=13, color="#1e293b")),
+                margin=dict(l=10, r=10, t=50, b=10),
+                showlegend=False,
+            )
+            return fig
+
+        with tab_1y:
+            tickers_1y = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
+            st.plotly_chart(make_bar_chart("1Y", "1 Year", "#3b82f6", tickers_1y, perf), use_container_width=True)
+
+        with tab_ytd:
+            tickers_ytd = sorted(perf.keys(), key=lambda t: perf[t]["YTD"], reverse=True)
+            st.plotly_chart(make_bar_chart("YTD", "Year to Date", "#8b5cf6", tickers_ytd, perf), use_container_width=True)
+
+        with tab_3m:
+            tickers_3m = sorted(perf.keys(), key=lambda t: perf[t]["3M"], reverse=True)
+            st.plotly_chart(make_bar_chart("3M", "3 Months", "#06b6d4", tickers_3m, perf), use_container_width=True)
+
+        with tab_all:
+            # Grouped bar chart – all 3 periods side by side
+            tickers_all = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
+            fig_all = go.Figure()
+            for pkey, plabel, pcolor in periods:
+                vals = [perf[t][pkey] for t in tickers_all]
+                fig_all.add_trace(go.Bar(
+                    name=plabel, x=tickers_all, y=vals,
+                    marker_color=pcolor,
+                    text=[f"{v:+.1f}%" for v in vals],
+                    textposition="outside",
+                    textfont=dict(size=10),
+                    hovertemplate="<b>%{x}</b> " + plabel + "<br>%{y:.2f}%<extra></extra>",
+                ))
+            fig_all.add_hline(y=0, line_color="#94a3b8", line_width=1.5)
+            fig_all.update_layout(
+                barmode="group",
+                title=dict(text="Portfolio Return — All Periods Comparison", x=0.5,
+                           font=dict(size=16, color="#1e293b")),
+                paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
+                height=440,
+                yaxis=dict(title="Return (%)", gridcolor="#e2e8f0",
+                           zeroline=False, ticksuffix="%", color="#475569"),
+                xaxis=dict(color="#475569", tickfont=dict(size=12, color="#1e293b")),
+                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center",
+                            font=dict(size=12)),
+                margin=dict(l=10, r=10, t=60, b=10),
+            )
+            st.plotly_chart(fig_all, use_container_width=True)
+
+        # ── Summary table ──
+        st.markdown("### 📋 Performance Summary")
+        rows_data = []
+        for t in tickers_sorted:
+            d = perf[t]
+            rows_data.append({
+                "Ticker": t,
+                "Price": f"${d['price']:,.2f}",
+                "1Y Return": f"{d['1Y']:+.2f}%",
+                "YTD Return": f"{d['YTD']:+.2f}%",
+                "3M Return": f"{d['3M']:+.2f}%",
+                "Shares": HOLDINGS[t],
+                "Value": f"${d['price'] * HOLDINGS[t]:,.2f}",
+            })
+        import pandas as pd
+        df_perf = pd.DataFrame(rows_data)
+
+        def color_ret(val):
+            if isinstance(val, str) and "%" in val:
+                v = float(val.replace("%","").replace("+",""))
+                if v > 0:   return "color: #16a34a; font-weight: 700"
+                elif v < 0: return "color: #dc2626; font-weight: 700"
+            return ""
+
+        st.dataframe(
+            df_perf.style.applymap(color_ret, subset=["1Y Return","YTD Return","3M Return"]),
+            use_container_width=True, hide_index=True
+        )
+
+    st.markdown("---")
+    st.info("👈 Klik ticker di **My Positions** atau ketik di **Other Ticker** untuk analisa detail.")
     st.stop()
 
 if not api_key:
