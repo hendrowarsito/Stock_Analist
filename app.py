@@ -340,7 +340,7 @@ if not ticker:
                 mode="lines",
                 name=label,
                 line=dict(color=color, width=2.2),
-                hovertemplate=f"<b>{t}</b>  |  %{{x|%b %d, %Y}}  |  %{{y:.2f}}  |  %{{customdata:+.2f}}%",
+                hovertemplate=f"<b>{t}</b>  |  %{{x|%b %d, %Y}}  |  %{{y:.2f}}  |  %{{customdata:+.2f}}%<extra></extra>",
                 customdata=s.values - 100,
             ))
 
