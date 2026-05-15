@@ -354,7 +354,7 @@ if not ticker:
             plot_bgcolor="#f8fafc",
             height=500,
             xaxis=dict(
-                title="Date",
+                #title="Date",
                 gridcolor="#e2e8f0",
                 tickformat="%b %Y",
                 tickfont=dict(size=11, color="#475569"),
