@@ -248,155 +248,162 @@ if not ticker:
     st.markdown("## 📈 Portfolio Performance")
 
     @st.cache_data(ttl=600)
-    def fetch_performance(tickers):
-        from datetime import date
+    def fetch_price_history(tickers, period):
+        """Return rebased price series (start=100) for each ticker."""
+        from datetime import date, timedelta
         import pandas as pd
-        result = {}
+
+        period_map = {"1Y": "1y", "YTD": "ytd", "3M": "3mo"}
+        yf_period  = period_map[period]
+
+        all_series = {}
         for t in tickers:
             try:
                 tk   = yf.Ticker(t)
-                hist = tk.history(period="1y", interval="1d")
-                if hist.empty or len(hist) < 5:
+                hist = tk.history(period=yf_period, interval="1d")
+                if hist.empty or len(hist) < 3:
                     continue
-                hist.index = hist.index.tz_localize(None) if hist.index.tzinfo else hist.index
-                close = hist["Close"]
-                today_px = close.iloc[-1]
-
-                # 1 Year
-                yr_px  = close.iloc[0]
-                yr_ret = (today_px / yr_px - 1) * 100
-
-                # YTD  – first trading day of current year
-                ytd_start = pd.Timestamp(f"{date.today().year}-01-01")
-                ytd_hist  = close[close.index >= ytd_start]
-                ytd_ret   = (today_px / ytd_hist.iloc[0] - 1) * 100 if len(ytd_hist) > 1 else 0.0
-
-                # 3 Month
-                mo3_hist = close.iloc[-63:] if len(close) >= 63 else close
-                mo3_ret  = (today_px / mo3_hist.iloc[0] - 1) * 100
-
-                result[t] = {
-                    "price":  today_px,
-                    "1Y":     yr_ret,
-                    "YTD":    ytd_ret,
-                    "3M":     mo3_ret,
-                }
+                hist.index = pd.DatetimeIndex(
+                    hist.index.tz_localize(None) if hist.index.tzinfo else hist.index
+                )
+                close = hist["Close"].dropna()
+                # Rebase to 100 at period start
+                rebased = (close / close.iloc[0]) * 100
+                all_series[t] = rebased
             except Exception:
                 pass
-        return result
+        return all_series
 
-    with st.spinner("📡 Fetching performance data..."):
-        perf = fetch_performance(tuple(HOLDINGS.keys()))
+    # Period selector
+    period_choice = st.radio(
+        "Pilih Periode",
+        options=["1Y", "YTD", "3M"],
+        format_func=lambda x: {"1Y": "📅 1 Year", "YTD": "🗓️ Year to Date", "3M": "📆 3 Months"}[x],
+        horizontal=True,
+    )
+    period_labels = {"1Y": "1 Year", "YTD": "Year to Date", "3M": "3 Months"}
 
-    if perf:
+    with st.spinner("📡 Fetching price history..."):
+        series_data = fetch_price_history(tuple(HOLDINGS.keys()), period_choice)
+
+    if series_data:
         import plotly.graph_objects as go
 
-        tickers_sorted = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
-        periods = [("1Y", "1 Year", "#3b82f6"), ("YTD", "Year to Date", "#8b5cf6"), ("3M", "3 Months", "#06b6d4")]
+        # Color palette – distinct colors for each ticker
+        COLORS = {
+            "AMD":  "#ef4444",
+            "TSLA": "#f97316",
+            "DUOL": "#eab308",
+            "NVDA": "#22c55e",
+            "HIMS": "#14b8a6",
+            "PLTR": "#3b82f6",
+            "IBIT": "#8b5cf6",
+            "VOO":  "#ec4899",
+            "MSFT": "#06b6d4",
+        }
+        DEFAULT_COLORS = [
+            "#ef4444","#f97316","#eab308","#22c55e","#14b8a6",
+            "#3b82f6","#8b5cf6","#ec4899","#06b6d4","#64748b",
+        ]
 
-        # ── Tab selector ──
-        tab_1y, tab_ytd, tab_3m, tab_all = st.tabs(["📅 1 Year", "🗓️ Year to Date", "📆 3 Months", "📊 All Periods"])
+        # Sort legend by final return (best on top)
+        final_returns = {t: s.iloc[-1] - 100 for t, s in series_data.items()}
+        sorted_tickers = sorted(series_data.keys(),
+                                key=lambda t: final_returns[t], reverse=True)
 
-        def make_bar_chart(period_key, period_label, color_pos, tickers_sorted, perf):
-            labels = tickers_sorted
-            values = [perf[t][period_key] for t in labels]
-            colors = ["#16a34a" if v >= 0 else "#dc2626" for v in values]
+        fig = go.Figure()
 
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=labels, y=values,
-                marker_color=colors,
-                text=[f"{v:+.1f}%" for v in values],
-                textposition="outside",
-                textfont=dict(size=12, color="#1e293b"),
-                hovertemplate="<b>%{x}</b><br>Return: %{y:.2f}%<extra></extra>",
+        # Baseline at 100
+        if series_data:
+            all_dates = sorted(set(
+                d for s in series_data.values() for d in s.index
             ))
-            fig.add_hline(y=0, line_color="#94a3b8", line_width=1.5)
-            fig.update_layout(
-                title=dict(text=f"Portfolio Return — {period_label}", x=0.5,
-                           font=dict(size=16, color="#1e293b")),
-                paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
-                height=420,
-                yaxis=dict(title="Return (%)", gridcolor="#e2e8f0",
-                           zeroline=False, ticksuffix="%",
-                           color="#475569"),
-                xaxis=dict(gridcolor="#e2e8f0", color="#475569",
-                           tickfont=dict(size=13, color="#1e293b")),
-                margin=dict(l=10, r=10, t=50, b=10),
+            fig.add_trace(go.Scatter(
+                x=[all_dates[0], all_dates[-1]],
+                y=[100, 100],
+                mode="lines",
+                line=dict(color="#94a3b8", width=1.5, dash="dot"),
+                name="Baseline",
+                hoverinfo="skip",
                 showlegend=False,
-            )
-            return fig
+            ))
 
-        with tab_1y:
-            tickers_1y = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
-            st.plotly_chart(make_bar_chart("1Y", "1 Year", "#3b82f6", tickers_1y, perf), use_container_width=True)
+        for i, t in enumerate(sorted_tickers):
+            s     = series_data[t]
+            color = COLORS.get(t, DEFAULT_COLORS[i % len(DEFAULT_COLORS)])
+            ret   = final_returns[t]
+            label = f"{t} ({ret:+.1f}%)"
 
-        with tab_ytd:
-            tickers_ytd = sorted(perf.keys(), key=lambda t: perf[t]["YTD"], reverse=True)
-            st.plotly_chart(make_bar_chart("YTD", "Year to Date", "#8b5cf6", tickers_ytd, perf), use_container_width=True)
+            fig.add_trace(go.Scatter(
+                x=s.index,
+                y=s.values,
+                mode="lines",
+                name=label,
+                line=dict(color=color, width=2.2),
+                hovertemplate=(
+                    f"<b>{t}</b><br>"
+                    "Date: %{x|%b %d, %Y}<br>"
+                    "Indexed: %{y:.1f}<br>"
+                    f"Return from start: %{{customdata:.1f}}%"
+                    "<extra></extra>"
+                ),
+                customdata=s.values - 100,
+            ))
 
-        with tab_3m:
-            tickers_3m = sorted(perf.keys(), key=lambda t: perf[t]["3M"], reverse=True)
-            st.plotly_chart(make_bar_chart("3M", "3 Months", "#06b6d4", tickers_3m, perf), use_container_width=True)
-
-        with tab_all:
-            # Grouped bar chart – all 3 periods side by side
-            tickers_all = sorted(perf.keys(), key=lambda t: perf[t]["1Y"], reverse=True)
-            fig_all = go.Figure()
-            for pkey, plabel, pcolor in periods:
-                vals = [perf[t][pkey] for t in tickers_all]
-                fig_all.add_trace(go.Bar(
-                    name=plabel, x=tickers_all, y=vals,
-                    marker_color=pcolor,
-                    text=[f"{v:+.1f}%" for v in vals],
-                    textposition="outside",
-                    textfont=dict(size=10),
-                    hovertemplate="<b>%{x}</b> " + plabel + "<br>%{y:.2f}%<extra></extra>",
-                ))
-            fig_all.add_hline(y=0, line_color="#94a3b8", line_width=1.5)
-            fig_all.update_layout(
-                barmode="group",
-                title=dict(text="Portfolio Return — All Periods Comparison", x=0.5,
-                           font=dict(size=16, color="#1e293b")),
-                paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
-                height=440,
-                yaxis=dict(title="Return (%)", gridcolor="#e2e8f0",
-                           zeroline=False, ticksuffix="%", color="#475569"),
-                xaxis=dict(color="#475569", tickfont=dict(size=12, color="#1e293b")),
-                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center",
-                            font=dict(size=12)),
-                margin=dict(l=10, r=10, t=60, b=10),
-            )
-            st.plotly_chart(fig_all, use_container_width=True)
-
-        # ── Summary table ──
-        st.markdown("### 📋 Performance Summary")
-        rows_data = []
-        for t in tickers_sorted:
-            d = perf[t]
-            rows_data.append({
-                "Ticker": t,
-                "Price": f"${d['price']:,.2f}",
-                "1Y Return": f"{d['1Y']:+.2f}%",
-                "YTD Return": f"{d['YTD']:+.2f}%",
-                "3M Return": f"{d['3M']:+.2f}%",
-                "Shares": HOLDINGS[t],
-                "Value": f"${d['price'] * HOLDINGS[t]:,.2f}",
-            })
-        import pandas as pd
-        df_perf = pd.DataFrame(rows_data)
-
-        def color_ret(val):
-            if isinstance(val, str) and "%" in val:
-                v = float(val.replace("%","").replace("+",""))
-                if v > 0:   return "color: #16a34a; font-weight: 700"
-                elif v < 0: return "color: #dc2626; font-weight: 700"
-            return ""
-
-        st.dataframe(
-            df_perf.style.applymap(color_ret, subset=["1Y Return","YTD Return","3M Return"]),
-            use_container_width=True, hide_index=True
+        fig.update_layout(
+            title=dict(
+                text=f"Portfolio Performance — {period_labels[period_choice]} (Rebased to 100)",
+                x=0.5,
+                font=dict(size=16, color="#1e293b"),
+            ),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#f8fafc",
+            height=500,
+            xaxis=dict(
+                title="Date",
+                gridcolor="#e2e8f0",
+                tickformat="%b %Y",
+                tickfont=dict(size=11, color="#475569"),
+                color="#475569",
+                showspikes=True,
+                spikecolor="#94a3b8",
+                spikethickness=1,
+                spikedash="dot",
+            ),
+            yaxis=dict(
+                title="Indexed Value (Start = 100)",
+                gridcolor="#e2e8f0",
+                tickfont=dict(size=11, color="#475569"),
+                color="#475569",
+                zeroline=False,
+            ),
+            legend=dict(
+                orientation="v",
+                x=1.01, y=1,
+                xanchor="left",
+                font=dict(size=12),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="#e2e8f0",
+                borderwidth=1,
+            ),
+            hovermode="x unified",
+            hoverlabel=dict(bgcolor="white", font_size=12),
+            margin=dict(l=10, r=140, t=55, b=40),
         )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ── Summary metrics ──
+        best_t  = sorted_tickers[0]
+        worst_t = sorted_tickers[-1]
+        gainers = sum(1 for v in final_returns.values() if v >= 0)
+        losers  = len(final_returns) - gainers
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🏆 Best",    best_t,  f"{final_returns[best_t]:+.1f}%")
+        c2.metric("📉 Worst",   worst_t, f"{final_returns[worst_t]:+.1f}%")
+        c3.metric("🟢 Gainers", f"{gainers} stocks")
+        c4.metric("🔴 Losers",  f"{losers} stocks")
 
     st.markdown("---")
     st.info("👈 Klik ticker di **My Positions** atau ketik di **Other Ticker** untuk analisa detail.")
