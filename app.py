@@ -341,10 +341,10 @@ if not ticker:
                 name=label,
                 line=dict(color=color, width=2.2),
                 hovertemplate=(
-                    f"<b>{t}</b><br> %{{customdata:.1f}}%"
-                    "Date: %{x|%b %d, %Y}<br>"
-                    "Indexed: %{y:.1f}<br>"
-                    f"Return from start: %{{customdata:.1f}}%"
+                    f"<b>{t}</b><br>"
+                    "%{x|%b %d, %Y}<br> | %{y:.1f}<br> | %{{customdata:.1f}}%"
+                    #"Indexed: %{y:.1f}<br>"
+                    #f"Return from start: %{{customdata:.1f}}%"
                     "<extra></extra>"
                 ),
                 customdata=s.values - 100,
