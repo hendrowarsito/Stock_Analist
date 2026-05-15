@@ -387,17 +387,83 @@ if not ticker:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Summary metrics ──
-        best_t  = sorted_tickers[0]
-        worst_t = sorted_tickers[-1]
-        gainers = sum(1 for v in final_returns.values() if v >= 0)
-        losers  = len(final_returns) - gainers
+        # ── WMA200 Cards ──────────────────────────────────────────────────────
+        st.markdown("### 📐 Price vs WMA 200")
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🏆 Best",    best_t,  f"{final_returns[best_t]:+.2f}%")
-        c2.metric("📉 Worst",   worst_t, f"{final_returns[worst_t]:+.2f}%")
-        c3.metric("🟢 Gainers", f"{gainers} stocks")
-        c4.metric("🔴 Losers",  f"{losers} stocks")
+        @st.cache_data(ttl=600)
+        def fetch_wma200(tickers):
+            import pandas as pd
+            result = {}
+            for t in tickers:
+                try:
+                    tk     = yf.Ticker(t)
+                    daily  = tk.history(period="1y",  interval="1d")
+                    weekly = tk.history(period="4y",  interval="1wk")
+
+                    def wma(series, n):
+                        weights = pd.Series(range(1, n + 1))
+                        return series.rolling(n).apply(
+                            lambda x: (x * weights).sum() / weights.sum(), raw=True
+                        )
+
+                    if daily.empty or weekly.empty:
+                        continue
+
+                    price  = float(daily["Close"].iloc[-1])
+                    d_wma  = wma(daily["Close"],  200)
+                    d_val  = float(d_wma.iloc[-1])  if pd.notna(d_wma.iloc[-1])  else None
+                    d_pct  = (price / d_val  - 1) * 100 if d_val  else None
+                    w_wma  = wma(weekly["Close"], 200)
+                    w_val  = float(w_wma.iloc[-1]) if pd.notna(w_wma.iloc[-1]) else None
+                    w_pct  = (price / w_val  - 1) * 100 if w_val  else None
+
+                    result[t] = {"price": price, "d_pct": d_pct, "w_pct": w_pct}
+                except Exception:
+                    pass
+            return result
+
+        with st.spinner("📐 Calculating WMA200..."):
+            wma_data = fetch_wma200(tuple(HOLDINGS.keys()))
+
+        def pct_badge(val):
+            if val is None:
+                return "#64748b", "N/A"
+            return ("#16a34a" if val >= 0 else "#dc2626"), f"{val:+.2f}%"
+
+        tickers_wma  = list(HOLDINGS.keys())
+        cols_per_row = 3
+        for row_start in range(0, len(tickers_wma), cols_per_row):
+            row_tickers = tickers_wma[row_start : row_start + cols_per_row]
+            cols = st.columns(cols_per_row)
+            for col, t in zip(cols, row_tickers):
+                d = wma_data.get(t, {})
+                price            = d.get("price")
+                d_color, d_str   = pct_badge(d.get("d_pct"))
+                w_color, w_str   = pct_badge(d.get("w_pct"))
+                px_str           = f"${price:,.2f}" if price else "–"
+                with col:
+                    st.markdown(
+                        f'<div style="background:#ffffff;border:1px solid #e2e8f0;'
+                        f'border-radius:12px;padding:16px 18px;'
+                        f'box-shadow:0 1px 4px rgba(0,0,0,0.06);margin-bottom:10px;">'
+                        f'<div style="font-size:18px;font-weight:800;color:#1e293b;'
+                        f'margin-bottom:2px;">{t}</div>'
+                        f'<div style="font-size:22px;font-weight:700;color:#0f172a;'
+                        f'margin-bottom:10px;">{px_str}</div>'
+                        f'<div style="display:flex;justify-content:space-between;'
+                        f'background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:6px;">'
+                        f'<span style="font-size:11px;font-weight:600;color:#64748b;'
+                        f'text-transform:uppercase;letter-spacing:0.8px;">Daily WMA200</span>'
+                        f'<span style="font-size:13px;font-weight:700;color:{d_color};">{d_str}</span>'
+                        f'</div>'
+                        f'<div style="display:flex;justify-content:space-between;'
+                        f'background:#f8fafc;border-radius:8px;padding:8px 10px;">'
+                        f'<span style="font-size:11px;font-weight:600;color:#64748b;'
+                        f'text-transform:uppercase;letter-spacing:0.8px;">Weekly WMA200</span>'
+                        f'<span style="font-size:13px;font-weight:700;color:{w_color};">{w_str}</span>'
+                        f'</div></div>',
+                        unsafe_allow_html=True
+                    )
 
     st.markdown("---")
     st.info("👈 Klik ticker di **My Positions** atau ketik di **Other Ticker** untuk analisa detail.")
