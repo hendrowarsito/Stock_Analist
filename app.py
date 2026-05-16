@@ -415,9 +415,9 @@ if page == "WMA Scanner":
                     return ""
 
                 pct_cols = [c for c in df_display.columns if "%" in c]
-                styled = df_display.style.applymap(color_cell, subset=pct_cols)
+                styled = df_display.style.map(color_cell, subset=pct_cols)
                 if "Status" in df_display.columns:
-                    styled = styled.applymap(highlight_zone, subset=["Status"])
+                    styled = styled.map(highlight_zone, subset=["Status"])
                 return styled
 
             def format_df(df_in, zone_only=False):
