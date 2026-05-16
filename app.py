@@ -142,10 +142,6 @@ with st.sidebar:
                             help="sk-ant-... dari console.anthropic.com")
 
     st.markdown("---")
-    page = st.radio("🗂️ Navigation",
-                    options=["📈 Portfolio", "🔍 WMA Scanner"],
-                    horizontal=False)
-
     page = st.radio("Navigation",
                     options=["Portfolio", "WMA Scanner"],
                     horizontal=False)
