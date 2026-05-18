@@ -441,19 +441,21 @@ if page == "WMA Scanner":
             # ── Filter helper (operates on raw numeric df) ────────────────────
             def apply_filters(df_raw):
                 df = df_raw.copy()
-                if min_cagr > 0:
+                if df.empty:
+                    return df
+                if min_cagr > 0 and "Rev CAGR (%)" in df.columns:
                     df = df[df["Rev CAGR (%)"].apply(
                         lambda x: x >= min_cagr if pd.notna(x) else False
                     )]
-                if cash_debt_mode == "Kas > Utang (≥ 1×)":
+                if cash_debt_mode == "Kas > Utang (≥ 1×)" and "Cash/Debt" in df.columns:
                     df = df[df["Cash/Debt"].apply(
                         lambda x: x >= 1.0 if pd.notna(x) else False
                     )]
-                elif cash_debt_mode == "Kas ≥ 2× Utang":
+                elif cash_debt_mode == "Kas ≥ 2× Utang" and "Cash/Debt" in df.columns:
                     df = df[df["Cash/Debt"].apply(
                         lambda x: x >= 2.0 if pd.notna(x) else False
                     )]
-                if min_rule40 > 0:
+                if min_rule40 > 0 and "Rule of 40" in df.columns:
                     df = df[df["Rule of 40"].apply(
                         lambda x: x >= min_rule40 if pd.notna(x) else False
                     )]
