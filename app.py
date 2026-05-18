@@ -453,13 +453,18 @@ if page == "WMA Scanner":
             # ── Format for display (raw → strings) ───────────────────────────
             def format_df(df_in):
                 df = df_in.copy()
-                df = df.sort_values(
-                    ["In Zone", "Zone Depth (%)"],
-                    ascending=[False, False]
-                )
+                if df.empty:
+                    return df
+                sort_cols = [c for c in ["In Zone", "Zone Depth (%)"] if c in df.columns]
+                if sort_cols:
+                    df = df.sort_values(
+                        sort_cols,
+                        ascending=[False] * len(sort_cols),
+                        na_position="last",
+                    )
                 df["Status"] = df.apply(
-                    lambda r: "✅ In Zone" if r["In Zone"]
-                    else ("⬆️ Above" if r["vs Daily (%)"] > 0 else "❌ Below"),
+                    lambda r: "✅ In Zone" if r.get("In Zone", False)
+                    else ("⬆️ Above" if r.get("vs Daily (%)", 0) > 0 else "❌ Below"),
                     axis=1
                 )
                 df["Price"]              = df["Price"].apply(lambda x: f"${x:,.2f}")
