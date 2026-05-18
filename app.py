@@ -255,11 +255,11 @@ if page == "WMA Scanner":
                            "INTC","QCOM","TXN","MU","AMAT","NOW","SNOW","PLTR","CRWD","PANW",
                            "DDOG","NET","ZS","FTNT","ADBE","CRM","INTU","WDAY","HUBS","DUOL",
                            "ASTS","RKLB","SOFI","HOOD","COIN","MSTR","SMCI","DELL","HPQ","IBM"],
-        "S&P 500 Top 100": ["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "AVGO", "TSLA", "META", "WMT", "BRK.B", "LLY", "MU", "JPM", "AMD", "XOM", "V", "ORCL", "INTC", "JNJ", "CSCO", "COST", "MA", "CAT", "CVX", "ABBV", "NFLX", "UNH", "LRCX", "BAC", "KO", "AMAT", "PG", "PLTR", "MS", "HD", "PM", "GE", "GEV", "GS", "TXN", "MRK", "KLAC", "LIN", "RTX", "WFC", "AXP", "QCOM", "C", "SNDK", "IBM", "ADI", "PEP", "TMUS", "PANW", "MCD", "NEE", "VZ", "ANET", "DIS", "STX", "AMGN", "BA", "APP", "BLK", "T", "WDC", "GLW", "TJX", "TMO", "GILD", "UNP", "SCHW", "DELL", "ETN", "APH", "UBER", "DE", "CRWD", "WELL", "ISRG", "COP", "ABT", "PFE", "BX", "VRT", "CRM", "HON", "PLD", "CB", "CVS", "LOW", "MO", "SBUX", "BKNG", "SPGI", "LMT", "SYK", "PGR", "COF"],
-        "S&P 500 Top 200": ["NEM", "BMY", "PWR", "DHR", "VRTX", "PH", "INTU", "CME", "EQIX", "SO", "HWM", "ACN", "TT", "ADBE", "NOW", "MDT", "CEG", "SNPS", "CMI", "CDNS", "WMB", "DUK", "HCA", "MAR", "BK", "MCK", "FCX", "GD", "FTNT", "FDX", "CMCSA", "WM", "JCI", "ICE", "KKR", "ADP", "PNC", "ELV", "MNST", "CSX", "UPS", "SLB", "USB", "AMT", "ABNB", "CIEN", "BSX", "APO", "MRSH", "MDLZ", "NOC", "MMM", "MPWR", "LITE", "CI", "MCO", "COHR", "KMI", "EOG", "EMR", "VLO", "MPC", "DDOG", "SHW", "NXPI", "ORLY", "REGN", "HLT", "ITW", "NSC", "PSX", "CL", "FIX", "RCL", "ECL", "HOOD", "DASH", "CRH", "ROST", "AEP", "AON", "WBD", "GM", "CTAS", "DLR", "APD", "MSI", "SPG", "TDG", "RSG", "TRV", "BKR", "NKE", "URI", "GWW", "TEL", "KEYS", "AFL", "OXY", "SRE"],
-        "S&P 500 Top 300": ["TFC", "TRGP", "OKE", "PCAR", "FANG", "DVN", "O", "LHX", "ALL", "TGT", "CTVA", "AZO", "D", "CARR", "F", "TER", "AME", "NUE", "EBAY", "NDAQ", "COIN", "AJG", "PSA", "MET", "MCHP", "EA", "COR", "ADSK", "ROK", "ETR", "FAST", "XEL", "CVNA", "VST", "EW", "DAL", "CAH", "TTWO", "WAB", "EXC", "ON", "HPE", "GRMN", "FITB", "VTR", "STT", "AMP", "ODFL", "CMG", "XYZ", "IDXX", "YUM", "MSCI", "KR", "EME", "AIG", "SATS", "BDX", "KDP", "LYV", "PYPL", "ED", "IBKR", "ADM", "DHI", "PEG", "CBRE", "CBOE", "HSY", "CCI", "IRM", "HIG", "HUM", "JBL", "WEC", "PCG", "PRU", "EQT", "HAL", "VMC", "SYY", "CCL", "LVS", "MLM", "STLD", "Q", "KVUE", "ACGL", "PAYX", "ROP", "WAT", "KMB", "AXON", "A", "CASY", "HBAN", "WDAY", "ZTS", "CPRT", "NTRS"],
-        "S&P 500 Top 400": ["UAL", "VICI", "RJF", "MTB", "FISV", "ATO", "AEE", "RMD", "DTE", "EL", "EXR", "CNC", "TDY", "BIIB", "DOV", "IQV", "DOW", "ARES", "GEHC", "IR", "OTIS", "KHC", "CNP", "VRSN", "NRG", "EIX", "TPL", "PPL", "EXPE", "TPR", "VEEV", "CINF", "CFG", "ROL", "XYL", "FICO", "HUBB", "FE", "ES", "AVB", "FSLR", "WRB", "JBHT", "STZ", "AWK", "LYB", "SYF", "EQR", "DXCM", "BG", "NTAP", "WTW", "TSN", "EXE", "PPG", "KEY", "RF", "DG", "DRI", "CTSH", "CHD", "NI", "CMS", "AKAM", "TROW", "L", "PFG", "FIS", "ULTA", "CPAY", "WST", "VRSK", "ALB", "SBAC", "PHM", "MTD", "VLTO", "STE", "DGX", "LH", "FFIV", "EXPD", "LEN", "DD", "OMC", "WSM", "RL", "SW", "MRNA", "CHRW", "CF", "VTRS", "BRO", "INCY", "HPQ", "PKG", "EFX", "LUV", "SMCI", "IFF"],
-        "S&P 500 Top 500": ["SNA", "EVRG", "GPN", "LNT", "FTV", "GIS", "DLTR", "LII", "CHTR", "ESS", "AMCR", "BR", "INVH", "BEN", "PTC", "WY", "ZBH", "TSCO", "IP", "LDOS", "GNRC", "KIM", "TXT", "IEX", "NDSN", "NVR", "BALL", "HST", "MAA", "TKO", "GEN", "REG", "EG", "APA", "LULU", "HAS", "DOC", "CSGP", "DECK", "MAS", "J", "CDW", "SOLV", "FOXA", "HII", "TRMB", "FOX", "TYL", "DVA", "GPC", "AIZ", "MKC", "ZBRA", "BF.B", "GL", "IVZ", "UDR", "AVY", "PNW", "BBY", "PNR", "SWK", "COO", "GDDY", "APTV", "ALGN", "ERIE", "PSKY", "CLX", "HRL", "ALLE", "SJM", "RVTY", "AES", "SWKS", "PODD", "UHS", "CPT", "DPZ", "TTD", "WYNN", "IT", "FRT", "JKHY", "MGM", "NWSA", "BXP", "BAX", "HSIC", "ARE", "FDS", "AOS", "TAP", "BLDR", "CRL", "NCLH", "MOS", "TECH", "CAG", "POOL", "CPB", "NWS", "EPAM"],
+        "S&P 500 Top 50": ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","BRK-B","LLY","JPM","V",
+                           "UNH","XOM","TSLA","MA","PG","JNJ","HD","AVGO","MRK","CVX",
+                           "ABBV","COST","KO","PEP","WMT","BAC","MCD","NFLX","ADBE","CRM",
+                           "TMO","ACN","LIN","DIS","CSCO","ABT","NKE","DHR","TXN","NEE",
+                           "PM","RTX","AMGN","ORCL","HON","QCOM","IBM","GE","CAT","NOW"],
         "Single Stock":   [],
     }
 
@@ -281,103 +281,89 @@ if page == "WMA Scanner":
     scan_btn = st.button("🚀 Run WMA Scanner", type="primary", use_container_width=True)
 
     if scan_btn and scan_tickers:
-        # ── WMA + CAGR fetch ──────────────────────────────────────────────────
         import math
+        import pandas as pd
 
-        @st.cache_data(ttl=1800)
-        def scan_wma_cagr(tickers_tuple):
-            import pandas as pd
-            results = []
-            ticker_list = list(tickers_tuple)
-            prog = st.progress(0)
-            stat = st.empty()
+        prog = st.progress(0)
+        stat = st.empty()
+        all_results = []
 
-            for i, t in enumerate(ticker_list):
-                stat.markdown(f"⏳ Scanning **{t}** ({i+1}/{len(ticker_list)})...")
-                prog.progress((i+1) / len(ticker_list))
+        def wma(series, n):
+            w = pd.Series(range(1, n+1))
+            return series.rolling(n).apply(
+                lambda x: (x * w).sum() / w.sum(), raw=True
+            )
+
+        for i, t in enumerate(scan_tickers):
+            stat.markdown(f"⏳ Scanning **{t}** ({i+1}/{len(scan_tickers)})...")
+            prog.progress((i+1) / len(scan_tickers))
+            try:
+                tk     = yf.Ticker(t)
+                info   = tk.info or {}
+                daily  = tk.history(period="1y",  interval="1d")
+                weekly = tk.history(period="4y",  interval="1wk")
+
+                if daily.empty or len(daily) < 50:
+                    continue
+
+                price = float(daily["Close"].iloc[-1])
+
+                d_wma_s = wma(daily["Close"], 200)
+                d_wma   = float(d_wma_s.dropna().iloc[-1]) if len(d_wma_s.dropna()) > 0 else None
+
+                if len(weekly) >= 200:
+                    w_wma_s = wma(weekly["Close"], 200)
+                    w_wma   = float(w_wma_s.dropna().iloc[-1]) if len(w_wma_s.dropna()) > 0 else None
+                else:
+                    w_wma = None
+
+                if not d_wma or not w_wma:
+                    continue
+
+                d_pct      = (price / d_wma - 1) * 100
+                w_pct      = (price / w_wma - 1) * 100
+                in_zone    = (price < d_wma) and (price > w_wma)
+                zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
+
+                cagr = None
                 try:
-                    tk     = yf.Ticker(t)
-                    info   = tk.info or {}
-                    daily  = tk.history(period="1y",  interval="1d")
-                    weekly = tk.history(period="4y",  interval="1wk")
-
-                    if daily.empty or len(daily) < 50:
-                        continue
-
-                    price = float(daily["Close"].iloc[-1])
-
-                    def wma(series, n):
-                        w = pd.Series(range(1, n+1))
-                        return series.rolling(n).apply(
-                            lambda x: (x * w).sum() / w.sum(), raw=True
-                        )
-
-                    # Daily WMA200
-                    d_wma_s = wma(daily["Close"], 200)
-                    d_wma   = float(d_wma_s.iloc[-1]) if len(d_wma_s.dropna()) > 0 else None
-
-                    # Weekly WMA200
-                    if len(weekly) >= 200:
-                        w_wma_s = wma(weekly["Close"], 200)
-                        w_wma   = float(w_wma_s.iloc[-1]) if len(w_wma_s.dropna()) > 0 else None
-                    else:
-                        w_wma = None
-
-                    if not d_wma or not w_wma:
-                        continue
-
-                    d_pct = (price / d_wma - 1) * 100
-                    w_pct = (price / w_wma - 1) * 100
-
-                    # Zone check: price BELOW daily WMA200 AND ABOVE weekly WMA200
-                    in_zone     = (price < d_wma) and (price > w_wma)
-                    zone_depth  = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
-
-                    # Revenue CAGR – 12 quarters
-                    cagr = None
-                    try:
-                        qr = tk.quarterly_financials
-                        if qr is not None and not qr.empty:
-                            rev_row = None
-                            for lbl in ["Total Revenue","Revenue","Net Revenue"]:
-                                if lbl in qr.index:
-                                    rev_row = qr.loc[lbl]
-                                    break
-                            if rev_row is not None:
-                                rev = rev_row.dropna().sort_index()
-                                if len(rev) >= 2:
-                                    n_periods = min(12, len(rev) - 1)
-                                    r_start   = float(rev.iloc[-(n_periods+1)])
-                                    r_end     = float(rev.iloc[-1])
-                                    if r_start > 0 and r_end > 0:
-                                        # Annualize: n_periods quarters = n_periods/4 years
-                                        years = n_periods / 4.0
-                                        cagr  = (math.pow(r_end / r_start, 1 / years) - 1) * 100
-                    except Exception:
-                        pass
-
-                    results.append({
-                        "Ticker":       t,
-                        "Price":        price,
-                        "Daily WMA200": d_wma,
-                        "Weekly WMA200":w_wma,
-                        "vs Daily (%)": round(d_pct, 2),
-                        "vs Weekly (%)":round(w_pct, 2),
-                        "In Zone":      in_zone,
-                        "Zone Depth (%)": round(zone_depth, 1) if zone_depth else None,
-                        "Rev CAGR (%)": round(cagr, 1) if cagr else None,
-                        "Sector":       info.get("sector","–"),
-                        "Market Cap":   info.get("marketCap", 0),
-                    })
+                    qr = tk.quarterly_financials
+                    if qr is not None and not qr.empty:
+                        rev_row = None
+                        for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                            if lbl in qr.index:
+                                rev_row = qr.loc[lbl]
+                                break
+                        if rev_row is not None:
+                            rev = rev_row.dropna().sort_index()
+                            if len(rev) >= 2:
+                                n_periods = min(12, len(rev) - 1)
+                                r_start   = float(rev.iloc[-(n_periods+1)])
+                                r_end     = float(rev.iloc[-1])
+                                if r_start > 0 and r_end > 0:
+                                    years = n_periods / 4.0
+                                    cagr  = (math.pow(r_end / r_start, 1 / years) - 1) * 100
                 except Exception:
                     pass
 
-            prog.empty()
-            stat.empty()
-            return results
+                all_results.append({
+                    "Ticker":        t,
+                    "Price":         price,
+                    "Daily WMA200":  d_wma,
+                    "Weekly WMA200": w_wma,
+                    "vs Daily (%)":  round(d_pct, 2),
+                    "vs Weekly (%)": round(w_pct, 2),
+                    "In Zone":       in_zone,
+                    "Zone Depth (%)":round(zone_depth, 1) if zone_depth else None,
+                    "Rev CAGR (%)":  round(cagr, 1) if cagr else None,
+                    "Sector":        info.get("sector", "–"),
+                    "Market Cap":    info.get("marketCap", 0),
+                })
+            except Exception:
+                pass
 
-        with st.spinner("🔍 Scanning..."):
-            all_results = scan_wma_cagr(tuple(scan_tickers))
+        prog.empty()
+        stat.empty()
 
         if not all_results:
             st.warning("Tidak ada data yang berhasil di-fetch.")
@@ -710,7 +696,6 @@ if not ticker:
         header_cells += 'font-size:12px;font-weight:700;color:#475569;border:1px solid #e2e8f0;'
         header_cells += 'min-width:80px;"></th>'
         for t in tickers_wma:
-            # Highlight NVDA-style: bold border on last? just style each header
             header_cells += (
                 f'<th style="background:#f1f5f9;padding:10px 14px;text-align:center;'
                 f'font-size:13px;font-weight:800;color:#1e293b;'
