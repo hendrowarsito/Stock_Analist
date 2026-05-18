@@ -263,26 +263,51 @@ if page == "WMA Scanner":
         "Single Stock":   [],
     }
 
-    col_u, col_s = st.columns([2, 1])
-    with col_u:
-        universe_choice = st.selectbox("📂 Stock Universe", list(UNIVERSES.keys()))
-    with col_s:
-        min_cagr = st.number_input("Min Revenue CAGR (%)", value=10.0, step=1.0,
-                                   help="Filter saham dengan Revenue CAGR 12 quartal ≥ nilai ini")
+    # ── ① Universe selector ───────────────────────────────────────────────────
+    universe_choice = st.selectbox("📂 ① Stock Universe", list(UNIVERSES.keys()))
 
     if universe_choice == "Single Stock":
-        single_input = st.text_input("Masukkan ticker (pisah koma jika multiple, e.g. NVDA,AAPL,MSFT)").upper()
+        single_input = st.text_input(
+            "Masukkan ticker (pisah koma jika multiple, e.g. NVDA,AAPL,MSFT)"
+        ).upper()
         scan_tickers = [t.strip() for t in single_input.split(",") if t.strip()] if single_input else []
     else:
         scan_tickers = UNIVERSES[universe_choice]
 
-    st.caption(f"Universe: **{len(scan_tickers)} stocks** · Filter CAGR ≥ {min_cagr:.0f}%")
+    # ── Filter criteria ②③④ ───────────────────────────────────────────────────
+    st.markdown("##### 🎛️ Filter Kriteria")
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        min_cagr = st.number_input(
+            "② Min Revenue CAGR (%)", value=10.0, step=1.0,
+            help="Revenue CAGR 12 kuartal terakhir (annualized) ≥ nilai ini. Set 0 untuk skip."
+        )
+    with fc2:
+        cash_debt_mode = st.selectbox(
+            "③ Kas vs Utang",
+            options=["Semua (no filter)", "Kas > Utang (≥ 1×)", "Kas ≥ 2× Utang"],
+            help="Filter berdasarkan rasio kas terhadap total utang. Kas > Utang = net-cash position."
+        )
+    with fc3:
+        min_rule40 = st.number_input(
+            "④ Min Rule of 40", value=0.0, step=5.0,
+            help="Rev Growth YoY (%) + FCF Margin (%) ≥ nilai ini. Benchmark SaaS = 40. Set 0 untuk skip."
+        )
+
+    active_filters = []
+    if min_cagr > 0:                            active_filters.append(f"CAGR ≥ {min_cagr:.0f}%")
+    if cash_debt_mode != "Semua (no filter)":   active_filters.append(cash_debt_mode)
+    if min_rule40 > 0:                          active_filters.append(f"Rule of 40 ≥ {min_rule40:.0f}")
+
+    st.caption(
+        f"Universe: **{len(scan_tickers)} stocks** · "
+        + (f"Filter aktif: **{' · '.join(active_filters)}**" if active_filters else "Tidak ada filter tambahan")
+    )
 
     scan_btn = st.button("🚀 Run WMA Scanner", type="primary", use_container_width=True)
 
     if scan_btn and scan_tickers:
         import math
-        import pandas as pd
 
         prog = st.progress(0)
         stat = st.empty()
@@ -325,6 +350,7 @@ if page == "WMA Scanner":
                 in_zone    = (price < d_wma) and (price > w_wma)
                 zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
 
+                # ── ② Revenue CAGR ────────────────────────────────────────────
                 cagr = None
                 try:
                     qr = tk.quarterly_financials
@@ -346,18 +372,46 @@ if page == "WMA Scanner":
                 except Exception:
                     pass
 
+                # ── ③ Cash vs Debt ────────────────────────────────────────────
+                total_cash = info.get("totalCash") or 0
+                total_debt = info.get("totalDebt") or 0
+                if total_debt > 0:
+                    cash_debt_ratio = total_cash / total_debt
+                elif total_cash > 0:
+                    cash_debt_ratio = 99.0   # no debt, has cash → effectively infinite
+                else:
+                    cash_debt_ratio = None
+
+                # ── ④ Rule of 40 ──────────────────────────────────────────────
+                rev_growth_raw = info.get("revenueGrowth")
+                rev_growth_pct = (rev_growth_raw * 100) if rev_growth_raw is not None else None
+                total_revenue  = info.get("totalRevenue") or 0
+                fcf            = info.get("freeCashflow") or 0
+                fcf_margin     = (fcf / total_revenue * 100) if total_revenue > 0 else None
+                rule_of_40     = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
+
                 all_results.append({
-                    "Ticker":        t,
-                    "Price":         price,
-                    "Daily WMA200":  d_wma,
-                    "Weekly WMA200": w_wma,
-                    "vs Daily (%)":  round(d_pct, 2),
-                    "vs Weekly (%)": round(w_pct, 2),
-                    "In Zone":       in_zone,
-                    "Zone Depth (%)":round(zone_depth, 1) if zone_depth else None,
-                    "Rev CAGR (%)":  round(cagr, 1) if cagr else None,
-                    "Sector":        info.get("sector", "–"),
-                    "Market Cap":    info.get("marketCap", 0),
+                    "Ticker":             t,
+                    "Price":              price,
+                    "Daily WMA200":       d_wma,
+                    "Weekly WMA200":      w_wma,
+                    "vs Daily (%)":       round(d_pct, 2),
+                    "vs Weekly (%)":      round(w_pct, 2),
+                    "In Zone":            in_zone,
+                    "Zone Depth (%)":     round(zone_depth, 1) if zone_depth is not None else None,
+                    # ② CAGR
+                    "Rev CAGR (%)":       round(cagr, 1) if cagr is not None else None,
+                    # ③ Cash vs Debt
+                    "Cash ($B)":          round(total_cash / 1e9, 2) if total_cash else None,
+                    "Debt ($B)":          round(total_debt / 1e9, 2) if total_debt else None,
+                    "Cash/Debt":          round(cash_debt_ratio, 2) if cash_debt_ratio is not None else None,
+                    # ④ Rule of 40
+                    "Rev Growth YoY (%)": round(rev_growth_pct, 1) if rev_growth_pct is not None else None,
+                    "FCF Margin (%)":     round(fcf_margin, 1) if fcf_margin is not None else None,
+                    "Rule of 40":         round(rule_of_40, 1) if rule_of_40 is not None else None,
+                    # Meta
+                    "Sector":             info.get("sector", "–"),
+                    "Market Cap":         info.get("marketCap", 0),
                 })
             except Exception:
                 pass
@@ -368,26 +422,90 @@ if page == "WMA Scanner":
         if not all_results:
             st.warning("Tidak ada data yang berhasil di-fetch.")
         else:
-            import pandas as pd
-
             df_all = pd.DataFrame(all_results)
 
-            # ── Tabs: In Zone | All Results ───────────────────────────────────
             tab_zone, tab_all = st.tabs([
-                f"🎯 In Entry Zone ({df_all['In Zone'].sum()})",
+                f"🎯 In Entry Zone ({int(df_all['In Zone'].sum())})",
                 f"📋 All Results ({len(df_all)})"
             ])
 
+            # ── Filter helper (operates on raw numeric df) ────────────────────
+            def apply_filters(df_raw):
+                df = df_raw.copy()
+                if min_cagr > 0:
+                    df = df[df["Rev CAGR (%)"].apply(
+                        lambda x: x >= min_cagr if pd.notna(x) else False
+                    )]
+                if cash_debt_mode == "Kas > Utang (≥ 1×)":
+                    df = df[df["Cash/Debt"].apply(
+                        lambda x: x >= 1.0 if pd.notna(x) else False
+                    )]
+                elif cash_debt_mode == "Kas ≥ 2× Utang":
+                    df = df[df["Cash/Debt"].apply(
+                        lambda x: x >= 2.0 if pd.notna(x) else False
+                    )]
+                if min_rule40 > 0:
+                    df = df[df["Rule of 40"].apply(
+                        lambda x: x >= min_rule40 if pd.notna(x) else False
+                    )]
+                return df
+
+            # ── Format for display (raw → strings) ───────────────────────────
+            def format_df(df_in):
+                df = df_in.copy()
+                df = df.sort_values(
+                    ["In Zone", "Zone Depth (%)"],
+                    ascending=[False, False]
+                )
+                df["Status"] = df.apply(
+                    lambda r: "✅ In Zone" if r["In Zone"]
+                    else ("⬆️ Above" if r["vs Daily (%)"] > 0 else "❌ Below"),
+                    axis=1
+                )
+                df["Price"]              = df["Price"].apply(lambda x: f"${x:,.2f}")
+                df["Daily WMA200"]       = df["Daily WMA200"].apply(lambda x: f"${x:,.2f}")
+                df["Weekly WMA200"]      = df["Weekly WMA200"].apply(lambda x: f"${x:,.2f}")
+                df["vs Daily (%)"]       = df["vs Daily (%)"].apply(lambda x: f"{x:+.2f}%")
+                df["vs Weekly (%)"]      = df["vs Weekly (%)"].apply(lambda x: f"{x:+.2f}%")
+                df["Zone Depth (%)"]     = df["Zone Depth (%)"].apply(
+                    lambda x: f"{x:.1f}%" if pd.notna(x) else "–"
+                )
+                df["Rev CAGR (%)"]       = df["Rev CAGR (%)"].apply(
+                    lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
+                )
+                df["Cash/Debt"]          = df["Cash/Debt"].apply(
+                    lambda x: ("No Debt" if x == 99.0 else f"{x:.2f}×") if pd.notna(x) else "–"
+                )
+                df["Rev Growth YoY (%)"] = df["Rev Growth YoY (%)"].apply(
+                    lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
+                )
+                df["FCF Margin (%)"]     = df["FCF Margin (%)"].apply(
+                    lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
+                )
+                df["Rule of 40"]         = df["Rule of 40"].apply(
+                    lambda x: f"{x:+.1f}" if pd.notna(x) else "–"
+                )
+                df["Market Cap"]         = df["Market Cap"].apply(
+                    lambda x: f"${x/1e9:.1f}B" if x > 0 else "–"
+                )
+                cols_show = [
+                    "Ticker", "Status", "Price",
+                    "vs Daily (%)", "vs Weekly (%)", "Zone Depth (%)",
+                    "Rev CAGR (%)", "Cash/Debt", "Rule of 40",
+                    "Rev Growth YoY (%)", "FCF Margin (%)",
+                    "Sector", "Market Cap",
+                ]
+                return df[[c for c in cols_show if c in df.columns]]
+
+            # ── Styler ────────────────────────────────────────────────────────
             def style_table(df_display):
-                """Apply green/red coloring to pct columns."""
-                def color_cell(val):
+                def color_pct(val):
                     if isinstance(val, str) and val.endswith("%"):
                         try:
-                            v = float(val.replace("%","").replace("+",""))
+                            v = float(val.replace("%", "").replace("+", ""))
                             if v > 0:   return "color:#16a34a;font-weight:700"
                             elif v < 0: return "color:#dc2626;font-weight:700"
-                        except:
-                            pass
+                        except: pass
                     return ""
 
                 def highlight_zone(val):
@@ -396,87 +514,66 @@ if page == "WMA Scanner":
                     if val == "⬆️ Above":   return "background:#fffbeb;color:#d97706"
                     return ""
 
+                def color_rule40(val):
+                    try:
+                        v = float(str(val).replace("+", ""))
+                        if v >= 40:   return "color:#16a34a;font-weight:800"
+                        elif v >= 20: return "color:#d97706;font-weight:700"
+                        else:         return "color:#dc2626"
+                    except: return ""
+
+                def color_cash_debt(val):
+                    if val == "No Debt": return "color:#16a34a;font-weight:800"
+                    try:
+                        v = float(str(val).replace("×", ""))
+                        if v >= 2:   return "color:#16a34a;font-weight:800"
+                        elif v >= 1: return "color:#d97706;font-weight:700"
+                        else:        return "color:#dc2626"
+                    except: return ""
+
                 pct_cols = [c for c in df_display.columns if "%" in c]
-                styled = df_display.style.map(color_cell, subset=pct_cols)
+                styled = df_display.style.map(color_pct, subset=pct_cols)
                 if "Status" in df_display.columns:
                     styled = styled.map(highlight_zone, subset=["Status"])
+                if "Rule of 40" in df_display.columns:
+                    styled = styled.map(color_rule40, subset=["Rule of 40"])
+                if "Cash/Debt" in df_display.columns:
+                    styled = styled.map(color_cash_debt, subset=["Cash/Debt"])
                 return styled
 
-            def format_df(df_in, zone_only=False):
-                df = df_in.copy()
-                if zone_only:
-                    df = df[df["In Zone"] == True].copy()
-                    if df.empty:
-                        return df
-
-                # Sort: zone first, then by zone depth
-                df = df.sort_values(
-                    ["In Zone", "Zone Depth (%)"],
-                    ascending=[False, False]
-                )
-
-                df["Status"] = df.apply(
-                    lambda r: "✅ In Zone" if r["In Zone"]
-                    else ("⬆️ Above" if r["vs Daily (%)"] > 0 else "❌ Below"),
-                    axis=1
-                )
-
-                # Format display
-                df["Price"]          = df["Price"].apply(lambda x: f"${x:,.2f}")
-                df["Daily WMA200"]   = df["Daily WMA200"].apply(lambda x: f"${x:,.2f}")
-                df["Weekly WMA200"]  = df["Weekly WMA200"].apply(lambda x: f"${x:,.2f}")
-                df["vs Daily (%)"]   = df["vs Daily (%)"].apply(lambda x: f"{x:+.2f}%")
-                df["vs Weekly (%)"]  = df["vs Weekly (%)"].apply(lambda x: f"{x:+.2f}%")
-                df["Zone Depth (%)"] = df["Zone Depth (%)"].apply(
-                    lambda x: f"{x:.1f}%" if pd.notna(x) else "–"
-                )
-                df["Rev CAGR (%)"]   = df["Rev CAGR (%)"].apply(
-                    lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
-                )
-                df["Market Cap"]     = df["Market Cap"].apply(
-                    lambda x: f"${x/1e9:.1f}B" if x > 0 else "–"
-                )
-
-                cols_show = ["Ticker","Status","Price","vs Daily (%)","vs Weekly (%)",
-                             "Zone Depth (%)","Rev CAGR (%)","Sector","Market Cap"]
-                return df[[c for c in cols_show if c in df.columns]]
-
+            # ── Tab: Entry Zone ───────────────────────────────────────────────
             with tab_zone:
-                df_zone = format_df(df_all, zone_only=True)
-                # Apply CAGR filter
-                df_zone_f = df_zone.copy()
-                if not df_zone_f.empty and "Rev CAGR (%)" in df_zone_f.columns:
-                    def parse_cagr(v):
-                        try: return float(str(v).replace("%","").replace("+",""))
-                        except: return -999
-                    mask = df_zone_f["Rev CAGR (%)"].apply(parse_cagr) >= min_cagr
-                    df_zone_filtered = df_zone_f[mask]
-                else:
-                    df_zone_filtered = df_zone_f
+                df_zone_raw     = df_all[df_all["In Zone"] == True].copy()
+                df_filtered_raw = apply_filters(df_zone_raw)
+                df_zone_disp    = format_df(df_filtered_raw)
 
-                if df_zone_filtered.empty:
-                    st.info(f"Tidak ada saham yang masuk entry zone dengan CAGR ≥ {min_cagr:.0f}%.")
+                filter_label = " · ".join(active_filters) if active_filters else "tanpa filter tambahan"
+                if df_zone_disp.empty:
+                    st.info(f"Tidak ada saham yang masuk entry zone dengan kriteria: **{filter_label}**")
                 else:
-                    st.success(f"**{len(df_zone_filtered)} saham** masuk Entry Zone dengan Revenue CAGR ≥ {min_cagr:.0f}%")
-                    st.dataframe(
-                        style_table(df_zone_filtered),
-                        use_container_width=True, hide_index=True
-                    )
-                    # Legend
+                    st.success(f"**{len(df_zone_disp)} saham** lulus semua kriteria: {filter_label}")
+                    st.dataframe(style_table(df_zone_disp), use_container_width=True, hide_index=True)
                     st.markdown("""
-<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin-top:8px;font-size:12px;color:#475569">
-<b>📖 Cara baca:</b> &nbsp;
-<b>vs Daily (%)</b> = jarak harga dari Daily WMA200 (negatif = di bawah) &nbsp;·&nbsp;
-<b>vs Weekly (%)</b> = jarak harga dari Weekly WMA200 (positif = di atas) &nbsp;·&nbsp;
-<b>Zone Depth</b> = posisi dalam zone (0% = baru masuk, 100% = di Weekly WMA200) &nbsp;·&nbsp;
-<b>Rev CAGR</b> = CAGR revenue 12 kuartal terakhir (annualized)
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin-top:8px;font-size:12px;color:#475569;line-height:1.8">
+<b>📖 Cara baca kolom:</b><br>
+<b>vs Daily/Weekly (%)</b> = jarak harga dari WMA200 (– = di bawah, + = di atas) &nbsp;·&nbsp;
+<b>Zone Depth</b> = posisi dalam zone (0% = tepat di bawah Daily WMA, 100% = tepat di atas Weekly WMA) &nbsp;·&nbsp;
+<b>Rev CAGR (%)</b> = CAGR revenue 12 kuartal terakhir (annualized) &nbsp;·&nbsp;
+<b>Cash/Debt</b> = rasio kas terhadap total utang
+<span style="color:#16a34a;font-weight:700">≥ 2× 🟢</span> &nbsp;
+<span style="color:#d97706;font-weight:700">≥ 1× 🟡</span> &nbsp;
+<span style="color:#dc2626">&lt; 1× 🔴</span> &nbsp;·&nbsp;
+<b>Rule of 40</b> = Rev Growth YoY% + FCF Margin%
+<span style="color:#16a34a;font-weight:700">≥ 40 🟢</span> &nbsp;
+<span style="color:#d97706;font-weight:700">≥ 20 🟡</span> &nbsp;
+<span style="color:#dc2626">&lt; 20 🔴</span>
 </div>
 """, unsafe_allow_html=True)
 
+            # ── Tab: All Results ──────────────────────────────────────────────
             with tab_all:
-                df_formatted = format_df(df_all, zone_only=False)
                 st.dataframe(
-                    style_table(df_formatted),
+                    style_table(format_df(df_all)),
                     use_container_width=True, hide_index=True
                 )
 
