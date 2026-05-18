@@ -250,17 +250,26 @@ if page == "WMA Scanner":
 
     # ── Stock universe definitions ────────────────────────────────────────────
     UNIVERSES = {
-        "My Portfolio":   ["AMD","TSLA","DUOL","NVDA","HIMS","PLTR","IBIT","VOO","MSFT"],
-        "Technology":     ["AAPL","MSFT","NVDA","META","GOOGL","AMZN","TSLA","AMD","AVGO","ORCL",
-                           "INTC","QCOM","TXN","MU","AMAT","NOW","SNOW","PLTR","CRWD","PANW",
-                           "DDOG","NET","ZS","FTNT","ADBE","CRM","INTU","WDAY","HUBS","DUOL",
-                           "ASTS","RKLB","SOFI","HOOD","COIN","MSTR","SMCI","DELL","HPQ","IBM"],
-        "S&P 500 Top 50": ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","BRK-B","LLY","JPM","V",
-                           "UNH","XOM","TSLA","MA","PG","JNJ","HD","AVGO","MRK","CVX",
-                           "ABBV","COST","KO","PEP","WMT","BAC","MCD","NFLX","ADBE","CRM",
-                           "TMO","ACN","LIN","DIS","CSCO","ABT","NKE","DHR","TXN","NEE",
-                           "PM","RTX","AMGN","ORCL","HON","QCOM","IBM","GE","CAT","NOW"],
-        "Single Stock":   [],
+        "My Portfolio":        ["AMD","TSLA","DUOL","NVDA","HIMS","PLTR","IBIT","VOO","MSFT"],
+        "Technology":          ["AAPL","MSFT","NVDA","META","GOOGL","AMZN","TSLA","AMD","AVGO","ORCL",
+                                "INTC","QCOM","TXN","MU","AMAT","NOW","SNOW","PLTR","CRWD","PANW",
+                                "DDOG","NET","ZS","FTNT","ADBE","CRM","INTU","WDAY","HUBS","DUOL",
+                                "ASTS","RKLB","SOFI","HOOD","COIN","MSTR","SMCI","DELL","HPQ","IBM"],
+        "Healthcare":          ["UNH","JNJ","LLY","MRK","ABBV","ABT","TMO","DHR","BMY","AMGN",
+                                "PFE","GILD","ISRG","SYK","BSX","MDT","VRTX","REGN","CI","HUM",
+                                "CVS","MCK","HIMS","IQVIA","CRL","A","IQV","ZBH","BAX","DXCM",
+                                "PODD","INSP","TMDX","RXRX","EXAS","NTRA","ACAD","SANA","BEAM",
+                                "CRSP","NTLA","EDIT","BLUE","SGMO","FATE","KYMR","ARVN","BDTX"],
+        "Consumer Cyclical":   ["AMZN","TSLA","HD","MCD","NKE","SBUX","LOW","TJX","BKNG","MAR",
+                                "GM","F","ORLY","AZO","APTV","LVS","WYNN","MGM","RCL","CCL",
+                                "ABNB","UBER","LYFT","DASH","ETSY","EBAY","RVLV","CHWY","W","RDFN",
+                                "DKNG","PENN","FL","ANF","DUOL","CELH","LULU","SKX","HAS","MAT"],
+        "S&P 500 Top 50":      ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","BRK-B","LLY","JPM","V",
+                                "UNH","XOM","TSLA","MA","PG","JNJ","HD","AVGO","MRK","CVX",
+                                "ABBV","COST","KO","PEP","WMT","BAC","MCD","NFLX","ADBE","CRM",
+                                "TMO","ACN","LIN","DIS","CSCO","ABT","NKE","DHR","TXN","NEE",
+                                "PM","RTX","AMGN","ORCL","HON","QCOM","IBM","GE","CAT","NOW"],
+        "Single Stock":        [],
     }
 
     # ── ① Universe selector ───────────────────────────────────────────────────
