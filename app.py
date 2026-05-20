@@ -375,31 +375,65 @@ if page == "WMA Scanner":
             in_zone    = (price < d_wma) and (price > w_wma)
             zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
 
-            # ── ② Revenue CAGR ────────────────────────────────────────────────
-            cagr = None
+            # ── ② Revenue CAGR + YoY Growth + TTM Revenue ───────────────────────
+            # Source: quarterly_financials (same call, reused for all revenue metrics)
+            cagr           = None
+            rev_growth_pct = None
+            total_revenue  = 0.0
             try:
-                qr = tk.quarterly_financials
-                if qr is not None and not qr.empty:
-                    rev_row = None
+                qinc = tk.quarterly_financials
+                if qinc is not None and not qinc.empty:
                     for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
-                        if lbl in qr.index:
-                            rev_row = qr.loc[lbl]
+                        if lbl in qinc.index:
+                            rev = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
+                            n   = len(rev)
+                            if n >= 2:
+                                # CAGR
+                                n_p = min(12, n - 1)
+                                r0, r1 = float(rev.iloc[-(n_p+1)]), float(rev.iloc[-1])
+                                if r0 > 0 and r1 > 0:
+                                    cagr = (math.pow(r1 / r0, 1 / (n_p / 4.0)) - 1) * 100
+                                # TTM Revenue (last 4 quarters)
+                                total_revenue = float(rev.iloc[-4:].sum()) if n >= 4 else float(rev.iloc[-1])
+                                # YoY Rev Growth: TTM vs prior TTM
+                                if n >= 8:
+                                    ttm_new = rev.iloc[-4:].sum()
+                                    ttm_old = rev.iloc[-8:-4].sum()
+                                    if float(ttm_old) > 0:
+                                        rev_growth_pct = (float(ttm_new) / float(ttm_old) - 1) * 100
+                                elif n >= 5:
+                                    r_now, r_yr = float(rev.iloc[-1]), float(rev.iloc[-5])
+                                    if r_yr > 0:
+                                        rev_growth_pct = (r_now / r_yr - 1) * 100
                             break
-                    if rev_row is not None:
-                        rev = rev_row.dropna().sort_index()
-                        if len(rev) >= 2:
-                            n_periods = min(12, len(rev) - 1)
-                            r_start   = float(rev.iloc[-(n_periods + 1)])
-                            r_end     = float(rev.iloc[-1])
-                            if r_start > 0 and r_end > 0:
-                                years = n_periods / 4.0
-                                cagr  = (math.pow(r_end / r_start, 1 / years) - 1) * 100
             except Exception:
                 pass
 
-            # ── ③ Cash vs Debt ────────────────────────────────────────────────
-            total_cash = info.get("totalCash") or 0
-            total_debt = info.get("totalDebt") or 0
+            # ── ③ Cash vs Debt (balance sheet) ───────────────────────────────
+            total_cash = 0.0
+            total_debt = 0.0
+            try:
+                qbs = tk.quarterly_balance_sheet
+                if qbs is not None and not qbs.empty:
+                    for lbl in ["Cash And Cash Equivalents",
+                                "Cash Cash Equivalents And Short Term Investments",
+                                "Cash"]:
+                        if lbl in qbs.index:
+                            v = qbs.loc[lbl].dropna()
+                            if len(v) > 0:
+                                total_cash = float(v.iloc[0])
+                            break
+                    for lbl in ["Total Debt",
+                                "Long Term Debt And Capital Lease Obligation",
+                                "Long Term Debt"]:
+                        if lbl in qbs.index:
+                            v = qbs.loc[lbl].dropna()
+                            if len(v) > 0:
+                                total_debt = float(v.iloc[0])
+                            break
+            except Exception:
+                pass
+
             if total_debt > 0:
                 cash_debt_ratio = total_cash / total_debt
             elif total_cash > 0:
@@ -407,13 +441,58 @@ if page == "WMA Scanner":
             else:
                 cash_debt_ratio = None
 
-            # ── ④ Rule of 40 ──────────────────────────────────────────────────
-            rev_growth_raw = info.get("revenueGrowth")
-            rev_growth_pct = (rev_growth_raw * 100) if rev_growth_raw is not None else None
-            total_revenue  = info.get("totalRevenue") or 0
-            fcf            = info.get("freeCashflow") or 0
-            fcf_margin     = (fcf / total_revenue * 100) if total_revenue > 0 else None
-            rule_of_40     = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
+            # ── ④ FCF Margin (cashflow statement) ────────────────────────────
+            fcf = 0.0
+            try:
+                qcf = tk.quarterly_cashflow
+                if qcf is not None and not qcf.empty:
+                    if "Free Cash Flow" in qcf.index:
+                        v   = qcf.loc["Free Cash Flow"].dropna()
+                        n_q = min(4, len(v))
+                        if n_q > 0:
+                            # TTM FCF; annualise if < 4 quarters available
+                            fcf = float(v.iloc[:n_q].sum()) * (4 / n_q)
+                    if fcf == 0:   # fallback: operating CF − capex
+                        ocf_lbl = next(
+                            (l for l in ["Operating Cash Flow",
+                                         "Cash Flows From Operations",
+                                         "Cash From Operations"]
+                             if l in qcf.index), None)
+                        cap_lbl = next(
+                            (l for l in ["Capital Expenditure",
+                                         "Purchase Of Property Plant And Equipment",
+                                         "Purchases Of Property Plant And Equipment"]
+                             if l in qcf.index), None)
+                        if ocf_lbl:
+                            v_ocf   = qcf.loc[ocf_lbl].dropna()
+                            n_q     = min(4, len(v_ocf))
+                            ocf_ttm = float(v_ocf.iloc[:n_q].sum()) * (4 / n_q)
+                            capex_ttm = 0.0
+                            if cap_lbl:
+                                v_cap     = qcf.loc[cap_lbl].dropna()
+                                n_c       = min(4, len(v_cap))
+                                capex_ttm = float(v_cap.iloc[:n_c].sum()) * (4 / n_c)
+                            fcf = ocf_ttm - abs(capex_ttm)
+            except Exception:
+                pass
+
+            fcf_margin = (fcf / total_revenue * 100) if total_revenue > 0 else None
+            rule_of_40 = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
+
+            # ── Sector + Market Cap (info → fast_info fallback) ───────────────
+            sector, market_cap = "–", 0
+            try:
+                sector     = info.get("sector") or "–"
+                market_cap = info.get("marketCap") or 0
+            except Exception:
+                pass
+            if not market_cap or sector == "–":
+                try:
+                    fi = tk.fast_info
+                    if not market_cap:
+                        market_cap = getattr(fi, "market_cap", 0) or 0
+                except Exception:
+                    pass
 
             all_results.append({
                 "Ticker":             t,
@@ -431,8 +510,8 @@ if page == "WMA Scanner":
                 "Rev Growth YoY (%)": round(rev_growth_pct, 1) if rev_growth_pct is not None else None,
                 "FCF Margin (%)":     round(fcf_margin, 1) if fcf_margin is not None else None,
                 "Rule of 40":         round(rule_of_40, 1) if rule_of_40 is not None else None,
-                "Sector":             info.get("sector", "–"),
-                "Market Cap":         info.get("marketCap", 0),
+                "Sector":             sector,
+                "Market Cap":         market_cap,
             })
 
         prog.empty()
