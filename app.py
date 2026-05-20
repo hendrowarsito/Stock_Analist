@@ -318,118 +318,144 @@ if page == "WMA Scanner":
     if scan_btn and scan_tickers:
         import math
 
-        prog = st.progress(0)
-        stat = st.empty()
-        all_results = []
+        prog  = st.progress(0)
+        stat  = st.empty()
+        all_results  = []
+        skip_no_hist = 0   # < 50 daily bars
+        skip_no_wma  = 0   # can't compute daily or weekly WMA200
+        skip_error   = 0   # unhandled exception
 
         def wma(series, n):
-            w = pd.Series(range(1, n+1))
+            weights = np.arange(1, n + 1, dtype=float)
             return series.rolling(n).apply(
-                lambda x: (x * w).sum() / w.sum(), raw=True
+                lambda x: (x * weights).sum() / weights.sum(), raw=True
             )
 
         for i, t in enumerate(scan_tickers):
-            stat.markdown(f"⏳ Scanning **{t}** ({i+1}/{len(scan_tickers)})...")
-            prog.progress((i+1) / len(scan_tickers))
+            stat.markdown(f"⏳ Scanning **{t}** ({i+1}/{len(scan_tickers)})…")
+            prog.progress((i + 1) / len(scan_tickers))
+
+            # ── Fetch price history (critical – skip if unavailable) ──────────
             try:
                 tk     = yf.Ticker(t)
-                info   = tk.info or {}
                 daily  = tk.history(period="1y",  interval="1d")
-                weekly = tk.history(period="4y",  interval="1wk")
+                weekly = tk.history(period="5y",  interval="1wk")  # 5y ≈ 260 wks
+            except Exception:
+                skip_error += 1
+                continue
 
-                if daily.empty or len(daily) < 50:
-                    continue
+            if daily.empty or len(daily) < 50:
+                skip_no_hist += 1
+                continue
 
-                price = float(daily["Close"].iloc[-1])
+            # ── Fetch fundamentals (non-critical – degrade gracefully) ────────
+            try:
+                info = tk.info or {}
+            except Exception:
+                info = {}
 
-                d_wma_s = wma(daily["Close"], 200)
-                d_wma   = float(d_wma_s.dropna().iloc[-1]) if len(d_wma_s.dropna()) > 0 else None
+            # ── WMA200 ────────────────────────────────────────────────────────
+            try:
+                price   = float(daily["Close"].iloc[-1])
+                d_valid = wma(daily["Close"], 200).dropna()
+                d_wma   = float(d_valid.iloc[-1]) if len(d_valid) > 0 else None
 
-                if len(weekly) >= 200:
-                    w_wma_s = wma(weekly["Close"], 200)
-                    w_wma   = float(w_wma_s.dropna().iloc[-1]) if len(w_wma_s.dropna()) > 0 else None
-                else:
-                    w_wma = None
+                w_valid = wma(weekly["Close"], 200).dropna() if len(weekly) >= 200 else pd.Series([], dtype=float)
+                w_wma   = float(w_valid.iloc[-1]) if len(w_valid) > 0 else None
+            except Exception:
+                skip_error += 1
+                continue
 
-                if not d_wma or not w_wma:
-                    continue
+            if d_wma is None or w_wma is None:
+                skip_no_wma += 1
+                continue
 
-                d_pct      = (price / d_wma - 1) * 100
-                w_pct      = (price / w_wma - 1) * 100
-                in_zone    = (price < d_wma) and (price > w_wma)
-                zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
+            d_pct      = (price / d_wma - 1) * 100
+            w_pct      = (price / w_wma - 1) * 100
+            in_zone    = (price < d_wma) and (price > w_wma)
+            zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
 
-                # ── ② Revenue CAGR ────────────────────────────────────────────
-                cagr = None
-                try:
-                    qr = tk.quarterly_financials
-                    if qr is not None and not qr.empty:
-                        rev_row = None
-                        for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
-                            if lbl in qr.index:
-                                rev_row = qr.loc[lbl]
-                                break
-                        if rev_row is not None:
-                            rev = rev_row.dropna().sort_index()
-                            if len(rev) >= 2:
-                                n_periods = min(12, len(rev) - 1)
-                                r_start   = float(rev.iloc[-(n_periods+1)])
-                                r_end     = float(rev.iloc[-1])
-                                if r_start > 0 and r_end > 0:
-                                    years = n_periods / 4.0
-                                    cagr  = (math.pow(r_end / r_start, 1 / years) - 1) * 100
-                except Exception:
-                    pass
-
-                # ── ③ Cash vs Debt ────────────────────────────────────────────
-                total_cash = info.get("totalCash") or 0
-                total_debt = info.get("totalDebt") or 0
-                if total_debt > 0:
-                    cash_debt_ratio = total_cash / total_debt
-                elif total_cash > 0:
-                    cash_debt_ratio = 99.0   # no debt, has cash → effectively infinite
-                else:
-                    cash_debt_ratio = None
-
-                # ── ④ Rule of 40 ──────────────────────────────────────────────
-                rev_growth_raw = info.get("revenueGrowth")
-                rev_growth_pct = (rev_growth_raw * 100) if rev_growth_raw is not None else None
-                total_revenue  = info.get("totalRevenue") or 0
-                fcf            = info.get("freeCashflow") or 0
-                fcf_margin     = (fcf / total_revenue * 100) if total_revenue > 0 else None
-                rule_of_40     = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
-
-                all_results.append({
-                    "Ticker":             t,
-                    "Price":              price,
-                    "Daily WMA200":       d_wma,
-                    "Weekly WMA200":      w_wma,
-                    "vs Daily (%)":       round(d_pct, 2),
-                    "vs Weekly (%)":      round(w_pct, 2),
-                    "In Zone":            in_zone,
-                    "Zone Depth (%)":     round(zone_depth, 1) if zone_depth is not None else None,
-                    # ② CAGR
-                    "Rev CAGR (%)":       round(cagr, 1) if cagr is not None else None,
-                    # ③ Cash vs Debt
-                    "Cash ($B)":          round(total_cash / 1e9, 2) if total_cash else None,
-                    "Debt ($B)":          round(total_debt / 1e9, 2) if total_debt else None,
-                    "Cash/Debt":          round(cash_debt_ratio, 2) if cash_debt_ratio is not None else None,
-                    # ④ Rule of 40
-                    "Rev Growth YoY (%)": round(rev_growth_pct, 1) if rev_growth_pct is not None else None,
-                    "FCF Margin (%)":     round(fcf_margin, 1) if fcf_margin is not None else None,
-                    "Rule of 40":         round(rule_of_40, 1) if rule_of_40 is not None else None,
-                    # Meta
-                    "Sector":             info.get("sector", "–"),
-                    "Market Cap":         info.get("marketCap", 0),
-                })
+            # ── ② Revenue CAGR ────────────────────────────────────────────────
+            cagr = None
+            try:
+                qr = tk.quarterly_financials
+                if qr is not None and not qr.empty:
+                    rev_row = None
+                    for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                        if lbl in qr.index:
+                            rev_row = qr.loc[lbl]
+                            break
+                    if rev_row is not None:
+                        rev = rev_row.dropna().sort_index()
+                        if len(rev) >= 2:
+                            n_periods = min(12, len(rev) - 1)
+                            r_start   = float(rev.iloc[-(n_periods + 1)])
+                            r_end     = float(rev.iloc[-1])
+                            if r_start > 0 and r_end > 0:
+                                years = n_periods / 4.0
+                                cagr  = (math.pow(r_end / r_start, 1 / years) - 1) * 100
             except Exception:
                 pass
+
+            # ── ③ Cash vs Debt ────────────────────────────────────────────────
+            total_cash = info.get("totalCash") or 0
+            total_debt = info.get("totalDebt") or 0
+            if total_debt > 0:
+                cash_debt_ratio = total_cash / total_debt
+            elif total_cash > 0:
+                cash_debt_ratio = 99.0   # no debt, has cash
+            else:
+                cash_debt_ratio = None
+
+            # ── ④ Rule of 40 ──────────────────────────────────────────────────
+            rev_growth_raw = info.get("revenueGrowth")
+            rev_growth_pct = (rev_growth_raw * 100) if rev_growth_raw is not None else None
+            total_revenue  = info.get("totalRevenue") or 0
+            fcf            = info.get("freeCashflow") or 0
+            fcf_margin     = (fcf / total_revenue * 100) if total_revenue > 0 else None
+            rule_of_40     = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
+
+            all_results.append({
+                "Ticker":             t,
+                "Price":              price,
+                "Daily WMA200":       d_wma,
+                "Weekly WMA200":      w_wma,
+                "vs Daily (%)":       round(d_pct, 2),
+                "vs Weekly (%)":      round(w_pct, 2),
+                "In Zone":            in_zone,
+                "Zone Depth (%)":     round(zone_depth, 1) if zone_depth is not None else None,
+                "Rev CAGR (%)":       round(cagr, 1) if cagr is not None else None,
+                "Cash ($B)":          round(total_cash / 1e9, 2) if total_cash else None,
+                "Debt ($B)":          round(total_debt / 1e9, 2) if total_debt else None,
+                "Cash/Debt":          round(cash_debt_ratio, 2) if cash_debt_ratio is not None else None,
+                "Rev Growth YoY (%)": round(rev_growth_pct, 1) if rev_growth_pct is not None else None,
+                "FCF Margin (%)":     round(fcf_margin, 1) if fcf_margin is not None else None,
+                "Rule of 40":         round(rule_of_40, 1) if rule_of_40 is not None else None,
+                "Sector":             info.get("sector", "–"),
+                "Market Cap":         info.get("marketCap", 0),
+            })
 
         prog.empty()
         stat.empty()
 
+        # ── Diagnostics ───────────────────────────────────────────────────────
+        total_skipped = skip_no_hist + skip_no_wma + skip_error
+        if total_skipped > 0:
+            diag_parts = []
+            if skip_no_hist: diag_parts.append(f"{skip_no_hist} data harga < 50 hari")
+            if skip_no_wma:  diag_parts.append(f"{skip_no_wma} WMA200 tidak bisa dihitung (histori terlalu pendek)")
+            if skip_error:   diag_parts.append(f"{skip_error} error API/network")
+            st.caption(
+                f"ℹ️ {total_skipped} ticker dilewati: {' · '.join(diag_parts)}"
+            )
+
         if not all_results:
-            st.warning("Tidak ada data yang berhasil di-fetch.")
+            st.warning(
+                "Tidak ada data yang berhasil di-fetch. "
+                "Kemungkinan penyebab: (1) saham baru IPO < 4 tahun sehingga data Weekly WMA200 "
+                "tidak tersedia, (2) rate-limit yfinance, atau (3) gangguan network. "
+                "Coba pilih universe lain atau jalankan ulang."
+            )
         else:
             df_all = pd.DataFrame(all_results)
 
