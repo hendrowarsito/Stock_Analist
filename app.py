@@ -376,39 +376,56 @@ if page == "WMA Scanner":
             zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
 
             # ── ② Revenue CAGR + YoY Growth + TTM Revenue ───────────────────────
-            # quarterly_income_stmt returns up to 12 quarters (quarterly_financials
-            # only returns 4, making CAGR degenerate to a 1-year rate = same as YoY)
+            # CAGR uses annual income statement (up to 4 fiscal years) so it
+            # always spans multiple years and is distinct from 1-year YoY growth.
+            # YoY growth uses quarterly data (TTM vs prior TTM, or Q vs Q-4).
             cagr           = None
             rev_growth_pct = None
             total_revenue  = 0.0
+
+            # --- CAGR from annual data ---
             try:
-                qinc = tk.quarterly_income_stmt   # up to 12 quarters
+                ann = tk.income_stmt          # annual, up to 4 fiscal years
+                if ann is None or ann.empty:
+                    ann = tk.financials       # older yfinance alias
+                if ann is not None and not ann.empty:
+                    for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                        if lbl in ann.index:
+                            rev_ann = ann.loc[lbl].dropna().sort_index()  # oldest→newest
+                            n_yr = len(rev_ann)
+                            if n_yr >= 2:
+                                r0 = float(rev_ann.iloc[0])
+                                r1 = float(rev_ann.iloc[-1])
+                                years = float(n_yr - 1)          # e.g. 3.0 for 4 data points
+                                if r0 > 0 and r1 > 0:
+                                    cagr = (math.pow(r1 / r0, 1.0 / years) - 1) * 100
+                            break
+            except Exception:
+                pass
+
+            # --- YoY growth + TTM revenue from quarterly data ---
+            try:
+                qinc = tk.quarterly_income_stmt
                 if qinc is None or qinc.empty:
-                    qinc = tk.quarterly_financials # fallback (4 quarters)
+                    qinc = tk.quarterly_financials
                 if qinc is not None and not qinc.empty:
                     for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
                         if lbl in qinc.index:
                             rev = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
                             n   = len(rev)
-                            if n >= 2:
-                                # CAGR over up to 12 quarters, annualised
-                                n_p = min(12, n - 1)
-                                r0, r1 = float(rev.iloc[-(n_p+1)]), float(rev.iloc[-1])
-                                if r0 > 0 and r1 > 0:
-                                    cagr = (math.pow(r1 / r0, 1 / (n_p / 4.0)) - 1) * 100
-                                # TTM Revenue (last 4 quarters)
-                                total_revenue = float(rev.iloc[-4:].sum()) if n >= 4 else float(rev.iloc[-1])
-                                # YoY Rev Growth: TTM vs prior TTM (needs ≥ 8 quarters)
-                                if n >= 8:
-                                    ttm_new = rev.iloc[-4:].sum()
-                                    ttm_old = rev.iloc[-8:-4].sum()
-                                    if float(ttm_old) > 0:
-                                        rev_growth_pct = (float(ttm_new) / float(ttm_old) - 1) * 100
-                                elif n >= 5:
-                                    # fallback: latest quarter vs same quarter 1 yr ago
-                                    r_now, r_yr = float(rev.iloc[-1]), float(rev.iloc[-5])
-                                    if r_yr > 0:
-                                        rev_growth_pct = (r_now / r_yr - 1) * 100
+                            # TTM Revenue (last 4 quarters)
+                            total_revenue = float(rev.iloc[-4:].sum()) if n >= 4 else float(rev.sum())
+                            # YoY Rev Growth: TTM vs prior TTM (needs ≥ 8 quarters)
+                            if n >= 8:
+                                ttm_new = rev.iloc[-4:].sum()
+                                ttm_old = rev.iloc[-8:-4].sum()
+                                if float(ttm_old) > 0:
+                                    rev_growth_pct = (float(ttm_new) / float(ttm_old) - 1) * 100
+                            elif n >= 5:
+                                # fallback: latest quarter vs same quarter 1 yr ago
+                                r_now, r_yr = float(rev.iloc[-1]), float(rev.iloc[-5])
+                                if r_yr > 0:
+                                    rev_growth_pct = (r_now / r_yr - 1) * 100
                             break
             except Exception:
                 pass
