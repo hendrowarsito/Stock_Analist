@@ -376,14 +376,15 @@ if page == "WMA Scanner":
             zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
 
             # ── ② Revenue CAGR + YoY Growth + TTM Revenue ───────────────────────
-            # CAGR uses annual income statement (up to 4 fiscal years) so it
-            # always spans multiple years and is distinct from 1-year YoY growth.
-            # YoY growth uses quarterly data (TTM vs prior TTM, or Q vs Q-4).
+            # Both CAGR and YoY use annual income_stmt (up to 4 fiscal years).
+            # Annual data is far more reliable than quarterly which yfinance often
+            # returns with gaps, wrong quarter alignment, or only 4 quarters.
+            # TTM revenue still uses quarterly data for a more current figure.
             cagr           = None
             rev_growth_pct = None
             total_revenue  = 0.0
 
-            # --- CAGR from annual data ---
+            # --- CAGR + YoY from annual data ---
             try:
                 ann = tk.income_stmt          # annual, up to 4 fiscal years
                 if ann is None or ann.empty:
@@ -396,14 +397,18 @@ if page == "WMA Scanner":
                             if n_yr >= 2:
                                 r0 = float(rev_ann.iloc[0])
                                 r1 = float(rev_ann.iloc[-1])
-                                years = float(n_yr - 1)          # e.g. 3.0 for 4 data points
+                                years = float(n_yr - 1)   # e.g. 3.0 for 4 data points
                                 if r0 > 0 and r1 > 0:
                                     cagr = (math.pow(r1 / r0, 1.0 / years) - 1) * 100
+                                # YoY = most recent FY vs prior FY (always 1 step)
+                                r_prev = float(rev_ann.iloc[-2])
+                                if r_prev > 0:
+                                    rev_growth_pct = (r1 / r_prev - 1) * 100
                             break
             except Exception:
                 pass
 
-            # --- YoY growth + TTM revenue from quarterly data ---
+            # --- TTM Revenue from quarterly data (last 4 quarters) ---
             try:
                 qinc = tk.quarterly_income_stmt
                 if qinc is None or qinc.empty:
@@ -411,21 +416,9 @@ if page == "WMA Scanner":
                 if qinc is not None and not qinc.empty:
                     for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
                         if lbl in qinc.index:
-                            rev = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
-                            n   = len(rev)
-                            # TTM Revenue (last 4 quarters)
-                            total_revenue = float(rev.iloc[-4:].sum()) if n >= 4 else float(rev.sum())
-                            # YoY Rev Growth: TTM vs prior TTM (needs ≥ 8 quarters)
-                            if n >= 8:
-                                ttm_new = rev.iloc[-4:].sum()
-                                ttm_old = rev.iloc[-8:-4].sum()
-                                if float(ttm_old) > 0:
-                                    rev_growth_pct = (float(ttm_new) / float(ttm_old) - 1) * 100
-                            elif n >= 5:
-                                # fallback: latest quarter vs same quarter 1 yr ago
-                                r_now, r_yr = float(rev.iloc[-1]), float(rev.iloc[-5])
-                                if r_yr > 0:
-                                    rev_growth_pct = (r_now / r_yr - 1) * 100
+                            rev_q = qinc.loc[lbl].dropna().sort_index()
+                            n_q   = len(rev_q)
+                            total_revenue = float(rev_q.iloc[-4:].sum()) if n_q >= 4 else float(rev_q.sum())
                             break
             except Exception:
                 pass
