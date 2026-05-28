@@ -6,6 +6,10 @@ import anthropic
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import html as _html
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -1200,6 +1204,160 @@ def call_agent(client, system: str, user: str, max_tokens: int) -> str:
         return f"[Agent error: {e}]"
 
 
+# ── Email helpers ─────────────────────────────────────────────────────────────
+def _md_to_html(text: str) -> str:
+    """Very minimal markdown → HTML: bold, newlines. No external deps."""
+    import re
+    text = _html.escape(text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'\*(.+?)\*',     r'<em>\1</em>',         text)
+    text = text.replace('\n', '<br>')
+    return text
+
+
+def _build_email_html(ticker, company, price, chg, dcls, dlbl, results, depth):
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    dec_colors = {
+        "decision-buy":  ("#f0fdf4", "#16a34a", "#14532d"),
+        "decision-sell": ("#fff1f2", "#dc2626", "#7f1d1d"),
+        "decision-hold": ("#fffbeb", "#d97706", "#78350f"),
+    }
+    bg, border, fg = dec_colors.get(dcls, ("#f8fafc", "#64748b", "#1e293b"))
+    chg_color = "#16a34a" if chg >= 0 else "#dc2626"
+    chg_sign  = "+" if chg >= 0 else ""
+
+    sections_html = ""
+    for key, label, color in [
+        ("fund", "📈 Fundamental Analyst",  "#ea580c"),
+        ("tech", "📉 Technical Analyst",    "#0284c7"),
+        ("news", "📰 News & Macro Analyst", "#7c3aed"),
+        ("sent", "💬 Sentiment Analyst",    "#0891b2"),
+    ]:
+        sections_html += f"""
+        <div style="margin-bottom:20px;padding:16px 20px;background:#ffffff;
+                    border:1px solid #e2e8f0;border-left:4px solid {color};border-radius:8px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;
+                      text-transform:uppercase;color:{color};margin-bottom:10px;">{label}</div>
+          <div style="font-size:14px;line-height:1.7;color:#334155;">
+            {_md_to_html(results.get(key, ''))}
+          </div>
+        </div>"""
+
+    bull_html = f"""
+        <div style="padding:16px 20px;background:#f0fdf4;border:1px solid #bbf7d0;
+                    border-radius:8px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;
+                      text-transform:uppercase;color:#059669;margin-bottom:10px;">🐂 Bull Case</div>
+          <div style="font-size:14px;line-height:1.7;color:#14532d;">
+            {_md_to_html(results.get('bull', ''))}
+          </div>
+        </div>"""
+
+    bear_html = f"""
+        <div style="padding:16px 20px;background:#fff1f2;border:1px solid #fecaca;
+                    border-radius:8px;margin-bottom:20px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;
+                      text-transform:uppercase;color:#dc2626;margin-bottom:10px;">🐻 Bear Case</div>
+          <div style="font-size:14px;line-height:1.7;color:#7f1d1d;">
+            {_md_to_html(results.get('bear', ''))}
+          </div>
+        </div>"""
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:680px;margin:24px auto;background:#f1f5f9;">
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:28px 32px;
+              border-radius:12px 12px 0 0;color:#ffffff;">
+    <div style="font-size:22px;font-weight:900;letter-spacing:-0.3px;">{company}</div>
+    <div style="font-size:15px;opacity:0.8;margin-top:2px;">{ticker} &nbsp;·&nbsp; {now_str}</div>
+    <div style="margin-top:14px;display:flex;gap:20px;flex-wrap:wrap;">
+      <span style="font-size:26px;font-weight:800;">${price:.2f}</span>
+      <span style="font-size:16px;font-weight:700;color:{chg_color};
+                   background:rgba(255,255,255,0.15);padding:4px 10px;
+                   border-radius:6px;align-self:center;">
+        {chg_sign}{chg:.2f}%
+      </span>
+      <span style="font-size:13px;opacity:0.7;align-self:center;">Depth: {depth}</span>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div style="background:#f8fafc;padding:24px 32px;border-radius:0 0 12px 12px;">
+
+    <!-- Final Decision -->
+    <div style="margin-bottom:24px;padding:20px 24px;background:{bg};
+                border:2px solid {border};border-radius:10px;">
+      <div style="font-size:18px;font-weight:900;color:{fg};margin-bottom:12px;">
+        ⚖️ FINAL DECISION — {dlbl}
+      </div>
+      <div style="font-size:14px;line-height:1.8;color:{fg};">
+        {_md_to_html(results.get('judge', ''))}
+      </div>
+    </div>
+
+    <!-- Bull / Bear -->
+    {bull_html}
+    {bear_html}
+
+    <!-- Specialist Reports -->
+    <div style="font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;
+                color:#64748b;margin-bottom:14px;padding-bottom:6px;
+                border-bottom:1px solid #e2e8f0;">📋 Specialist Reports</div>
+    {sections_html}
+
+    <!-- Footer -->
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;
+                font-size:11px;color:#94a3b8;text-align:center;line-height:1.6;">
+      US Stock Multi-Agent Analyzer &nbsp;·&nbsp; {now_str}<br>
+      ⚠️ Untuk keperluan edukasi. Bukan saran keuangan.
+    </div>
+  </div>
+</div>
+</body></html>"""
+
+
+def send_email_analysis(ticker, company, price, chg, dcls, dlbl, results, depth):
+    """Send analysis email via Gmail SMTP. Returns (ok: bool, error_msg: str)."""
+    try:
+        smtp_user = st.secrets.get("SMTP_USER", "")
+        smtp_pass = st.secrets.get("SMTP_PASS", "")
+    except Exception:
+        smtp_user, smtp_pass = "", ""
+
+    if not smtp_user or not smtp_pass:
+        return False, (
+            "SMTP belum dikonfigurasi. Tambahkan **SMTP_USER** dan **SMTP_PASS** "
+            "di *Settings → Secrets* pada Streamlit Cloud."
+        )
+
+    to_email  = "hendro.warsito@gmail.com"
+    now_str   = datetime.now().strftime('%Y-%m-%d %H:%M')
+    subject   = f"[Stock Analysis] {ticker} → {dlbl}  |  {now_str}"
+    body_html = _build_email_html(ticker, company, price, chg, dcls, dlbl, results, depth)
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = smtp_user
+        msg["To"]      = to_email
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as srv:
+            srv.ehlo()
+            srv.starttls()
+            srv.login(smtp_user, smtp_pass)
+            srv.send_message(msg)
+
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 if st.button(f"🚀 Run Analysis: {ticker}", type="primary", use_container_width=True):
     client  = anthropic.Anthropic(api_key=api_key)
@@ -1399,9 +1557,43 @@ Be specific with price levels. Be decisive. No hedging.""",
     with st.expander("🔬 Raw Market Data Used by Agents"):
         st.code(ctx, language="text")
 
+    # Persist analysis to session state for email button (survives re-render)
+    st.session_state["_last_analysis"] = dict(
+        ticker=ticker, company=company, price=price, chg=chg,
+        dcls=dcls, dlbl=dlbl, results=results, depth=depth,
+    )
+
     st.markdown("---")
     st.caption(
         f"⏱ {datetime.now().strftime('%Y-%m-%d %H:%M')}  ·  "
         f"Model: claude-sonnet-4-5  ·  Depth: {depth}  ·  "
         f"⚠️ Educational purposes only. Not financial advice."
     )
+
+# ── Email button (rendered every run if analysis exists in session state) ─────
+if "_last_analysis" in st.session_state:
+    la = st.session_state["_last_analysis"]
+    st.markdown("---")
+    ec1, ec2, ec3 = st.columns([3, 2, 1])
+    with ec2:
+        if st.button("📧 Kirim Analisis ke Email", use_container_width=True, key="btn_send_email"):
+            with st.spinner("Mengirim email ke hendro.warsito@gmail.com..."):
+                ok, err = send_email_analysis(**la)
+            if ok:
+                st.success("✅ Analisis berhasil dikirim ke **hendro.warsito@gmail.com**")
+            else:
+                st.error(f"❌ Gagal mengirim: {err}")
+                with st.expander("💡 Cara konfigurasi SMTP"):
+                    st.markdown("""
+**Langkah setup Gmail SMTP di Streamlit Cloud:**
+
+1. Aktifkan **2-Step Verification** di akun Gmail pengirim
+2. Buat **App Password**: myaccount.google.com → Security → App Passwords
+3. Di Streamlit Cloud → App Settings → **Secrets**, tambahkan:
+```toml
+SMTP_USER = "alamat_gmail_pengirim@gmail.com"
+SMTP_PASS = "xxxx xxxx xxxx xxxx"   # 16-char App Password
+```
+4. Redeploy app (atau tunggu auto-reload)
+""")
+    st.session_state.setdefault("_email_sent_ticker", None)
