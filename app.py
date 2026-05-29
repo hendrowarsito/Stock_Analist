@@ -320,6 +320,13 @@ if page == "WMA Scanner":
                                 "DPZ","WYNN","BAX","PODD","NWSA","JKHY","BXP","UHS","HSIC","ARE",
                                 "FDS","NCLH","BLDR","AOS","TAP","CRL","MOS","TECH","POOL","CAG",
                                 "CPB","NWS","EPAM"],
+        # ── Thematic universes ────────────────────────────────────────────────
+        "Semikonduktor":       ["TSM","MRVL","MU","ASML","LRCX","KLAC","ANET","DELL","CSCO","HPE"],
+        "Energi AI":           ["VRT","CEG","VST","GEV","ETN","PWR","TLN","BWXT","NRG","OKLO","MOD"],
+        "Optik/Jaringan":      ["LITE","COHR","FN","CIEN"],
+        "Keamanan Siber":      ["PANW","S","OKTA","CRWV","NTSK"],
+        "Kuantum":             ["IONQ","RGTI","QBTS","QUBT","ARQQ"],
+        "Antariksa":           ["RKLB","IRDM","PL","BKSY","LUNR","RDW","KTOS","LHX","ASTS"],
         "Single Stock":        [],
     }
 
