@@ -161,8 +161,6 @@ with st.sidebar:
         "PLTR": 7.234841001,
         "HIMS": 39.76698875,
         "NVDA": 4.488739476,
-        "IBIT": 18.764224072,
-        "VOO":  0.983931183,
         "MSFT": 0.488356258,
     }
 
@@ -254,7 +252,7 @@ if page == "WMA Scanner":
 
     # ── Stock universe definitions ────────────────────────────────────────────
     UNIVERSES = {
-        "My Portfolio":        ["AMD","TSLA","DUOL","NVDA","HIMS","PLTR","IBIT","VOO","MSFT"],
+        "My Portfolio":        ["AMD","TSLA","DUOL","NVDA","HIMS","PLTR","MSFT"],
         "Technology":          ["AAPL","MSFT","NVDA","META","GOOGL","AMZN","TSLA","AMD","AVGO","ORCL",
                                 "INTC","QCOM","TXN","MU","AMAT","NOW","SNOW","PLTR","CRWD","PANW",
                                 "DDOG","NET","ZS","FTNT","ADBE","CRM","INTU","WDAY","HUBS","DUOL",
