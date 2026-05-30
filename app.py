@@ -428,8 +428,8 @@ if page == "WMA Scanner":
 
             d_pct      = (price / d_wma - 1) * 100
             w_pct      = (price / w_wma - 1) * 100
-            in_zone    = (price < d_wma) and (price > w_wma)
-            zone_depth = ((d_wma - price) / (d_wma - w_wma) * 100) if (d_wma > w_wma) else None
+            in_zone    = (min(d_wma, w_wma) < price < max(d_wma, w_wma))
+            zone_depth = (abs(max(d_wma, w_wma) - price) / abs(d_wma - w_wma) * 100) if (d_wma != w_wma) else None
 
             # ── ② Revenue CAGR + YoY Growth + TTM Revenue ───────────────────────
             # Both CAGR and YoY use annual income_stmt (up to 4 fiscal years).
