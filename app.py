@@ -465,31 +465,39 @@ if page == "WMA Scanner":
                 pass
 
             # --- TTM Revenue + Quarterly YoY + save rev_q for R40 calc ---
+            # Combine quarterly_income_stmt + quarterly_financials to maximise
+            # the number of quarters available (each API may cover a diff window).
             rev_growth_q  = None   # quarterly YoY: TTM vs prior TTM (or Q vs Q-4)
             _rev_q_series = None   # kept for per-quarter R40 computation below
             try:
-                qinc = tk.quarterly_income_stmt
-                if qinc is None or qinc.empty:
-                    qinc = tk.quarterly_financials
-                if qinc is not None and not qinc.empty:
-                    for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
-                        if lbl in qinc.index:
-                            rev_q = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
-                            n_q   = len(rev_q)
-                            total_revenue = float(rev_q.iloc[-4:].sum()) if n_q >= 4 else float(rev_q.sum())
-                            _rev_q_series = rev_q   # save for per-quarter R40
-                            # Quarterly YoY: TTM vs prior TTM
-                            if n_q >= 8:
-                                ttm_new = float(rev_q.iloc[-4:].sum())
-                                ttm_old = float(rev_q.iloc[-8:-4].sum())
-                                if ttm_old > 0:
-                                    rev_growth_q = (ttm_new / ttm_old - 1) * 100
-                            elif n_q >= 5:
-                                r_now = float(rev_q.iloc[-1])
-                                r_yr  = float(rev_q.iloc[-5])
-                                if r_yr > 0:
-                                    rev_growth_q = (r_now / r_yr - 1) * 100
-                            break
+                _rev_parts = []
+                for _api in [tk.quarterly_income_stmt, tk.quarterly_financials]:
+                    try:
+                        _df = _api
+                        if _df is not None and not _df.empty:
+                            for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                                if lbl in _df.index:
+                                    _rev_parts.append(_df.loc[lbl].dropna())
+                                    break
+                    except Exception:
+                        pass
+                if _rev_parts:
+                    rev_q = pd.concat(_rev_parts)
+                    rev_q = rev_q[~rev_q.index.duplicated(keep="last")].sort_index()
+                    n_q   = len(rev_q)
+                    total_revenue = float(rev_q.iloc[-4:].sum()) if n_q >= 4 else float(rev_q.sum())
+                    _rev_q_series = rev_q   # save for per-quarter R40
+                    # Quarterly YoY: TTM vs prior TTM
+                    if n_q >= 8:
+                        ttm_new = float(rev_q.iloc[-4:].sum())
+                        ttm_old = float(rev_q.iloc[-8:-4].sum())
+                        if ttm_old > 0:
+                            rev_growth_q = (ttm_new / ttm_old - 1) * 100
+                    elif n_q >= 5:
+                        r_now = float(rev_q.iloc[-1])
+                        r_yr  = float(rev_q.iloc[-5])
+                        if r_yr > 0:
+                            rev_growth_q = (r_now / r_yr - 1) * 100
             except Exception:
                 pass
 
@@ -576,24 +584,55 @@ if page == "WMA Scanner":
             fcf_margin = (fcf / total_revenue * 100) if total_revenue > 0 else None
 
             # ── ④b Per-quarter Rule of 40 (last 3 quarters) ─────────────────
-            # R40_i = Rev YoY (Q_i vs Q_{i-4}) + FCF Margin (Q_i)
+            # R40_i = Rev YoY (Q_i vs Q_{i-4}) + FCF Margin (Q_i / Rev_Q_i)
+            # Primary: use quarterly series (needs ≥ i+5 revenue quarters).
+            # Fallback: if quarterly lacks year-ago data, derive from annual CAGR
+            # to approximate the year-ago revenue for that quarter.
             r40_q = [None, None, None]   # [latest, Q-1, Q-2]
             if _rev_q_series is not None and _fcf_q_series is not None:
                 n_r = len(_rev_q_series)
                 n_f = len(_fcf_q_series)
+                # Annual revenue series for fallback (already fetched for CAGR)
+                _ann_rev = None
+                try:
+                    _a = tk.income_stmt
+                    if _a is None or _a.empty:
+                        _a = tk.financials
+                    if _a is not None and not _a.empty:
+                        for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                            if lbl in _a.index:
+                                _ann_rev = _a.loc[lbl].dropna().sort_index()
+                                break
+                except Exception:
+                    pass
+
                 for i in range(3):
-                    # need at least i+5 revenue quarters for YoY, and i+1 FCF quarters
-                    if n_r >= i + 5 and n_f >= i + 1:
-                        try:
-                            r_curr     = float(_rev_q_series.iloc[-(i + 1)])
+                    if n_f < i + 1:
+                        continue   # not enough FCF quarters
+                    try:
+                        r_curr = float(_rev_q_series.iloc[-(i + 1)])
+                        f_curr = float(_fcf_q_series.iloc[-(i + 1)])
+                        if r_curr <= 0:
+                            continue
+                        fcm_i = f_curr / r_curr * 100
+
+                        # --- Rev YoY: quarterly direct (preferred) ---
+                        if n_r >= i + 5:
                             r_year_ago = float(_rev_q_series.iloc[-(i + 5)])
-                            f_curr     = float(_fcf_q_series.iloc[-(i + 1)])
-                            if r_curr > 0 and r_year_ago > 0:
-                                yoy_i   = (r_curr / r_year_ago - 1) * 100
-                                fcm_i   = f_curr / r_curr * 100
+                            if r_year_ago > 0:
+                                yoy_i = (r_curr / r_year_ago - 1) * 100
                                 r40_q[i] = round(yoy_i + fcm_i, 1)
-                        except Exception:
-                            pass
+                        # --- Rev YoY fallback: use annual growth rate ---
+                        elif _ann_rev is not None and len(_ann_rev) >= 2:
+                            # Derive implied quarterly YoY from annual rev growth
+                            # latest annual vs prior annual ≈ YoY for recent quarters
+                            r_ann_new = float(_ann_rev.iloc[-1])
+                            r_ann_old = float(_ann_rev.iloc[-2])
+                            if r_ann_old > 0:
+                                yoy_i = (r_ann_new / r_ann_old - 1) * 100
+                                r40_q[i] = round(yoy_i + fcm_i, 1)
+                    except Exception:
+                        pass
 
             # ── Sector + Market Cap (info → fast_info fallback) ───────────────
             sector, market_cap = "–", 0
