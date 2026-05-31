@@ -464,7 +464,8 @@ if page == "WMA Scanner":
             except Exception:
                 pass
 
-            # --- TTM Revenue from quarterly data (last 4 quarters) ---
+            # --- TTM Revenue + Quarterly YoY from quarterly data ---
+            rev_growth_q = None   # quarterly YoY: TTM vs prior TTM (or Q vs Q-4)
             try:
                 qinc = tk.quarterly_income_stmt
                 if qinc is None or qinc.empty:
@@ -472,12 +473,29 @@ if page == "WMA Scanner":
                 if qinc is not None and not qinc.empty:
                     for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
                         if lbl in qinc.index:
-                            rev_q = qinc.loc[lbl].dropna().sort_index()
+                            rev_q = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
                             n_q   = len(rev_q)
                             total_revenue = float(rev_q.iloc[-4:].sum()) if n_q >= 4 else float(rev_q.sum())
+                            # Quarterly YoY: TTM vs prior TTM
+                            if n_q >= 8:
+                                ttm_new = float(rev_q.iloc[-4:].sum())
+                                ttm_old = float(rev_q.iloc[-8:-4].sum())
+                                if ttm_old > 0:
+                                    rev_growth_q = (ttm_new / ttm_old - 1) * 100
+                            elif n_q >= 5:
+                                r_now = float(rev_q.iloc[-1])
+                                r_yr  = float(rev_q.iloc[-5])
+                                if r_yr > 0:
+                                    rev_growth_q = (r_now / r_yr - 1) * 100
                             break
             except Exception:
                 pass
+
+            # Deceleration flag: quarterly YoY < 50% of 3Y CAGR
+            decel_flag = (
+                rev_growth_q is not None and cagr is not None
+                and cagr > 0 and rev_growth_q < cagr * 0.5
+            )
 
             # ── ③ Cash vs Debt (balance sheet) ───────────────────────────────
             total_cash = 0.0
@@ -574,6 +592,8 @@ if page == "WMA Scanner":
                 "In Zone":            in_zone,
                 "Zone Depth (%)":     round(zone_depth, 1) if zone_depth is not None else None,
                 "Rev CAGR (%)":       round(cagr, 1) if cagr is not None else None,
+                "Rev Growth Q (%)":   round(rev_growth_q, 1) if rev_growth_q is not None else None,
+                "Decel":              decel_flag,
                 "Cash ($B)":          round(total_cash / 1e9, 2) if total_cash else None,
                 "Debt ($B)":          round(total_debt / 1e9, 2) if total_debt else None,
                 "Cash/Debt":          round(cash_debt_ratio, 2) if cash_debt_ratio is not None else None,
@@ -664,6 +684,12 @@ if page == "WMA Scanner":
                 df["Rev CAGR (%)"]       = df["Rev CAGR (%)"].apply(
                     lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
                 )
+                df["Rev Growth Q (%)"]   = df["Rev Growth Q (%)"].apply(
+                    lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
+                )
+                df["Decel"]              = df["Decel"].apply(
+                    lambda x: "⚠️ Decel" if x else "–"
+                )
                 df["Cash/Debt"]          = df["Cash/Debt"].apply(
                     lambda x: ("No Debt" if x == 99.0 else f"{x:.2f}×") if pd.notna(x) else "–"
                 )
@@ -682,7 +708,8 @@ if page == "WMA Scanner":
                 cols_show = [
                     "Ticker", "Status", "Price",
                     "vs Daily (%)", "vs Weekly (%)", "Zone Depth (%)",
-                    "Rev CAGR (%)", "Cash/Debt", "Rule of 40",
+                    "Rev CAGR (%)", "Rev Growth Q (%)", "Decel",
+                    "Cash/Debt", "Rule of 40",
                     "Rev Growth YoY (%)", "FCF Margin (%)",
                     "Sector", "Market Cap",
                 ]
@@ -722,6 +749,10 @@ if page == "WMA Scanner":
                         else:        return "color:#dc2626"
                     except: return ""
 
+                def color_decel(val):
+                    if val == "⚠️ Decel": return "color:#dc2626;font-weight:700"
+                    return "color:#94a3b8"
+
                 pct_cols = [c for c in df_display.columns if "%" in c]
                 styled = df_display.style.map(color_pct, subset=pct_cols)
                 if "Status" in df_display.columns:
@@ -730,6 +761,8 @@ if page == "WMA Scanner":
                     styled = styled.map(color_rule40, subset=["Rule of 40"])
                 if "Cash/Debt" in df_display.columns:
                     styled = styled.map(color_cash_debt, subset=["Cash/Debt"])
+                if "Decel" in df_display.columns:
+                    styled = styled.map(color_decel, subset=["Decel"])
                 return styled
 
             # ── Tab: Entry Zone ───────────────────────────────────────────────
@@ -749,7 +782,9 @@ if page == "WMA Scanner":
 <b>📖 Cara baca kolom:</b><br>
 <b>vs Daily/Weekly (%)</b> = jarak harga dari WMA200 (– = di bawah, + = di atas) &nbsp;·&nbsp;
 <b>Zone Depth</b> = posisi dalam zone (0% = tepat di bawah Daily WMA, 100% = tepat di atas Weekly WMA) &nbsp;·&nbsp;
-<b>Rev CAGR (%)</b> = CAGR revenue 12 kuartal terakhir (annualized) &nbsp;·&nbsp;
+<b>Rev CAGR (%)</b> = CAGR revenue tahunan (multi-year, dari annual income stmt) &nbsp;·&nbsp;
+<b>Rev Growth Q (%)</b> = YoY pertumbuhan revenue quarterly terbaru (TTM vs TTM-4Q, atau Q vs Q-4) &nbsp;·&nbsp;
+<b>⚠️ Decel</b> = Rev Growth Q &lt; 50% dari CAGR (pertumbuhan melambat signifikan) &nbsp;·&nbsp;
 <b>Cash/Debt</b> = rasio kas terhadap total utang
 <span style="color:#16a34a;font-weight:700">≥ 2× 🟢</span> &nbsp;
 <span style="color:#d97706;font-weight:700">≥ 1× 🟡</span> &nbsp;
