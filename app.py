@@ -464,8 +464,9 @@ if page == "WMA Scanner":
             except Exception:
                 pass
 
-            # --- TTM Revenue + Quarterly YoY from quarterly data ---
-            rev_growth_q = None   # quarterly YoY: TTM vs prior TTM (or Q vs Q-4)
+            # --- TTM Revenue + Quarterly YoY + save rev_q for R40 calc ---
+            rev_growth_q  = None   # quarterly YoY: TTM vs prior TTM (or Q vs Q-4)
+            _rev_q_series = None   # kept for per-quarter R40 computation below
             try:
                 qinc = tk.quarterly_income_stmt
                 if qinc is None or qinc.empty:
@@ -476,6 +477,7 @@ if page == "WMA Scanner":
                             rev_q = qinc.loc[lbl].dropna().sort_index()  # oldest→newest
                             n_q   = len(rev_q)
                             total_revenue = float(rev_q.iloc[-4:].sum()) if n_q >= 4 else float(rev_q.sum())
+                            _rev_q_series = rev_q   # save for per-quarter R40
                             # Quarterly YoY: TTM vs prior TTM
                             if n_q >= 8:
                                 ttm_new = float(rev_q.iloc[-4:].sum())
@@ -529,17 +531,18 @@ if page == "WMA Scanner":
             else:
                 cash_debt_ratio = None
 
-            # ── ④ FCF Margin (cashflow statement) ────────────────────────────
-            fcf = 0.0
+            # ── ④ FCF (cashflow) — TTM for FCF Margin + per-quarter for R40 ──
+            fcf             = 0.0
+            _fcf_q_series   = None   # per-quarter FCF series (oldest→newest)
             try:
                 qcf = tk.quarterly_cashflow
                 if qcf is not None and not qcf.empty:
                     if "Free Cash Flow" in qcf.index:
-                        v   = qcf.loc["Free Cash Flow"].dropna()
-                        n_q = min(4, len(v))
+                        v_fcf = qcf.loc["Free Cash Flow"].dropna().sort_index()  # oldest→newest
+                        _fcf_q_series = v_fcf
+                        n_q = min(4, len(v_fcf))
                         if n_q > 0:
-                            # TTM FCF; annualise if < 4 quarters available
-                            fcf = float(v.iloc[:n_q].sum()) * (4 / n_q)
+                            fcf = float(v_fcf.iloc[-n_q:].sum()) * (4 / n_q)
                     if fcf == 0:   # fallback: operating CF − capex
                         ocf_lbl = next(
                             (l for l in ["Operating Cash Flow",
@@ -552,20 +555,45 @@ if page == "WMA Scanner":
                                          "Purchases Of Property Plant And Equipment"]
                              if l in qcf.index), None)
                         if ocf_lbl:
-                            v_ocf   = qcf.loc[ocf_lbl].dropna()
+                            v_ocf   = qcf.loc[ocf_lbl].dropna().sort_index()
                             n_q     = min(4, len(v_ocf))
-                            ocf_ttm = float(v_ocf.iloc[:n_q].sum()) * (4 / n_q)
+                            ocf_ttm = float(v_ocf.iloc[-n_q:].sum()) * (4 / n_q)
                             capex_ttm = 0.0
                             if cap_lbl:
-                                v_cap     = qcf.loc[cap_lbl].dropna()
+                                v_cap     = qcf.loc[cap_lbl].dropna().sort_index()
                                 n_c       = min(4, len(v_cap))
-                                capex_ttm = float(v_cap.iloc[:n_c].sum()) * (4 / n_c)
+                                capex_ttm = float(v_cap.iloc[-n_c:].sum()) * (4 / n_c)
+                                # build per-quarter fallback series
+                                if _fcf_q_series is None and len(v_ocf) > 0:
+                                    if len(v_cap) > 0:
+                                        _fcf_q_series = (v_ocf - v_cap.reindex(v_ocf.index, fill_value=0).abs())
+                                    else:
+                                        _fcf_q_series = v_ocf
                             fcf = ocf_ttm - abs(capex_ttm)
             except Exception:
                 pass
 
             fcf_margin = (fcf / total_revenue * 100) if total_revenue > 0 else None
-            rule_of_40 = ((rev_growth_pct or 0) + fcf_margin) if fcf_margin is not None else None
+
+            # ── ④b Per-quarter Rule of 40 (last 3 quarters) ─────────────────
+            # R40_i = Rev YoY (Q_i vs Q_{i-4}) + FCF Margin (Q_i)
+            r40_q = [None, None, None]   # [latest, Q-1, Q-2]
+            if _rev_q_series is not None and _fcf_q_series is not None:
+                n_r = len(_rev_q_series)
+                n_f = len(_fcf_q_series)
+                for i in range(3):
+                    # need at least i+5 revenue quarters for YoY, and i+1 FCF quarters
+                    if n_r >= i + 5 and n_f >= i + 1:
+                        try:
+                            r_curr     = float(_rev_q_series.iloc[-(i + 1)])
+                            r_year_ago = float(_rev_q_series.iloc[-(i + 5)])
+                            f_curr     = float(_fcf_q_series.iloc[-(i + 1)])
+                            if r_curr > 0 and r_year_ago > 0:
+                                yoy_i   = (r_curr / r_year_ago - 1) * 100
+                                fcm_i   = f_curr / r_curr * 100
+                                r40_q[i] = round(yoy_i + fcm_i, 1)
+                        except Exception:
+                            pass
 
             # ── Sector + Market Cap (info → fast_info fallback) ───────────────
             sector, market_cap = "–", 0
@@ -599,7 +627,9 @@ if page == "WMA Scanner":
                 "Cash/Debt":          round(cash_debt_ratio, 2) if cash_debt_ratio is not None else None,
                 "Rev Growth YoY (%)": round(rev_growth_pct, 1) if rev_growth_pct is not None else None,
                 "FCF Margin (%)":     round(fcf_margin, 1) if fcf_margin is not None else None,
-                "Rule of 40":         round(rule_of_40, 1) if rule_of_40 is not None else None,
+                "R40 (Q)":            r40_q[0],
+                "R40 (Q-1)":          r40_q[1],
+                "R40 (Q-2)":          r40_q[2],
                 "Sector":             sector,
                 "Market Cap":         market_cap,
             })
@@ -650,8 +680,8 @@ if page == "WMA Scanner":
                     df = df[df["Cash/Debt"].apply(
                         lambda x: x >= 2.0 if pd.notna(x) else False
                     )]
-                if min_rule40 > 0 and "Rule of 40" in df.columns:
-                    df = df[df["Rule of 40"].apply(
+                if min_rule40 > 0 and "R40 (Q)" in df.columns:
+                    df = df[df["R40 (Q)"].apply(
                         lambda x: x >= min_rule40 if pd.notna(x) else False
                     )]
                 return df
@@ -699,9 +729,11 @@ if page == "WMA Scanner":
                 df["FCF Margin (%)"]     = df["FCF Margin (%)"].apply(
                     lambda x: f"{x:+.1f}%" if pd.notna(x) else "–"
                 )
-                df["Rule of 40"]         = df["Rule of 40"].apply(
-                    lambda x: f"{x:+.1f}" if pd.notna(x) else "–"
-                )
+                for col in ["R40 (Q)", "R40 (Q-1)", "R40 (Q-2)"]:
+                    if col in df.columns:
+                        df[col] = df[col].apply(
+                            lambda x: f"{x:+.1f}" if pd.notna(x) else "–"
+                        )
                 df["Market Cap"]         = df["Market Cap"].apply(
                     lambda x: f"${x/1e9:.1f}B" if x > 0 else "–"
                 )
@@ -709,7 +741,8 @@ if page == "WMA Scanner":
                     "Ticker", "Status", "Price",
                     "vs Daily (%)", "vs Weekly (%)", "Zone Depth (%)",
                     "Rev CAGR (%)", "Rev Growth Q (%)", "Decel",
-                    "Cash/Debt", "Rule of 40",
+                    "Cash/Debt",
+                    "R40 (Q)", "R40 (Q-1)", "R40 (Q-2)",
                     "Rev Growth YoY (%)", "FCF Margin (%)",
                     "Sector", "Market Cap",
                 ]
@@ -757,8 +790,9 @@ if page == "WMA Scanner":
                 styled = df_display.style.map(color_pct, subset=pct_cols)
                 if "Status" in df_display.columns:
                     styled = styled.map(highlight_zone, subset=["Status"])
-                if "Rule of 40" in df_display.columns:
-                    styled = styled.map(color_rule40, subset=["Rule of 40"])
+                r40_cols = [c for c in ["R40 (Q)", "R40 (Q-1)", "R40 (Q-2)"] if c in df_display.columns]
+                if r40_cols:
+                    styled = styled.map(color_rule40, subset=r40_cols)
                 if "Cash/Debt" in df_display.columns:
                     styled = styled.map(color_cash_debt, subset=["Cash/Debt"])
                 if "Decel" in df_display.columns:
@@ -789,7 +823,7 @@ if page == "WMA Scanner":
 <span style="color:#16a34a;font-weight:700">≥ 2× 🟢</span> &nbsp;
 <span style="color:#d97706;font-weight:700">≥ 1× 🟡</span> &nbsp;
 <span style="color:#dc2626">&lt; 1× 🔴</span> &nbsp;·&nbsp;
-<b>Rule of 40</b> = Rev Growth YoY% + FCF Margin%
+<b>R40 (Q) / (Q-1) / (Q-2)</b> = Rule of 40 per kuartal = Rev YoY Q% + FCF Margin Q% &nbsp;·&nbsp; tren 3 kuartal terbaru
 <span style="color:#16a34a;font-weight:700">≥ 40 🟢</span> &nbsp;
 <span style="color:#d97706;font-weight:700">≥ 20 🟡</span> &nbsp;
 <span style="color:#dc2626">&lt; 20 🔴</span>
