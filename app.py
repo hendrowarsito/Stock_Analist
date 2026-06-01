@@ -20,80 +20,109 @@ st.set_page_config(
 )
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
-st.markdown("""
+_dark = st.session_state.get("dark_mode", False)
+
+_BG       = "#0f172a" if _dark else "#f5f7fa"
+_SIDEBAR  = "#1e293b" if _dark else "#ffffff"
+_CARD     = "#1e293b" if _dark else "#ffffff"
+_BORDER   = "#334155" if _dark else "#e2e8f0"
+_TEXT     = "#f1f5f9" if _dark else "#1e293b"
+_SUBTEXT  = "#94a3b8" if _dark else "#475569"
+_TABLIST  = "#0f172a" if _dark else "#f1f5f9"
+_TABSEL   = "#334155" if _dark else "#ffffff"
+_METRIC   = "#1e293b" if _dark else "#ffffff"
+_EXPANDER = "#1e293b" if _dark else "#ffffff"
+
+_BUY_BG   = "#052e16" if _dark else "#f0fdf4"
+_BUY_TX   = "#86efac" if _dark else "#14532d"
+_SELL_BG  = "#450a0a" if _dark else "#fff1f2"
+_SELL_TX  = "#fca5a5" if _dark else "#7f1d1d"
+_HOLD_BG  = "#431407" if _dark else "#fffbeb"
+_HOLD_TX  = "#fcd34d" if _dark else "#78350f"
+_HDR_BDR  = "#334155" if _dark else "#f1f5f9"
+
+st.markdown(f"""
 <style>
     /* ── Global ── */
-    .stApp { background: #f5f7fa; }
-    section[data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e2e8f0; }
+    .stApp {{ background: {_BG}; color: {_TEXT}; }}
+    section[data-testid="stSidebar"] {{ background: {_SIDEBAR}; border-right: 1px solid {_BORDER}; }}
+    section[data-testid="stSidebar"] * {{ color: {_TEXT}; }}
+    .stApp p, .stApp li, .stApp label {{ color: {_TEXT}; }}
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4 {{ color: {_TEXT}; }}
 
     /* ── Agent cards ── */
-    .agent-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+    .agent-card {{
+        background: {_CARD};
+        border: 1px solid {_BORDER};
         border-radius: 12px;
         padding: 18px 22px;
         margin-bottom: 14px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-        color: #1e293b;
-    }
-    .agent-header {
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        color: {_TEXT};
+    }}
+    .agent-header {{
         font-size: 11px;
         font-weight: 800;
         letter-spacing: 1.8px;
         text-transform: uppercase;
         margin-bottom: 12px;
         padding-bottom: 8px;
-        border-bottom: 2px solid #f1f5f9;
-    }
+        border-bottom: 2px solid {_HDR_BDR};
+    }}
 
-    /* ── Agent accent colors (kept vivid for contrast on white) ── */
-    .bull   { color: #059669; }
-    .bear   { color: #dc2626; }
-    .tech   { color: #0284c7; }
-    .fund   { color: #ea580c; }
-    .newsc  { color: #7c3aed; }
-    .sent   { color: #0891b2; }
+    /* ── Agent accent colors ── */
+    .bull   {{ color: #34d399; }}
+    .bear   {{ color: #f87171; }}
+    .tech   {{ color: #38bdf8; }}
+    .fund   {{ color: #fb923c; }}
+    .newsc  {{ color: #a78bfa; }}
+    .sent   {{ color: #22d3ee; }}
 
     /* ── Decision boxes ── */
-    .decision-buy  {
-        background: #f0fdf4;
+    .decision-buy  {{
+        background: {_BUY_BG};
         border: 2px solid #16a34a;
         border-radius: 14px;
         padding: 22px 26px;
         margin-bottom: 22px;
-        color: #14532d;
-        box-shadow: 0 2px 8px rgba(22,163,74,0.12);
-    }
-    .decision-sell {
-        background: #fff1f2;
+        color: {_BUY_TX};
+        box-shadow: 0 2px 8px rgba(22,163,74,0.15);
+    }}
+    .decision-sell {{
+        background: {_SELL_BG};
         border: 2px solid #dc2626;
         border-radius: 14px;
         padding: 22px 26px;
         margin-bottom: 22px;
-        color: #7f1d1d;
-        box-shadow: 0 2px 8px rgba(220,38,38,0.12);
-    }
-    .decision-hold {
-        background: #fffbeb;
+        color: {_SELL_TX};
+        box-shadow: 0 2px 8px rgba(220,38,38,0.15);
+    }}
+    .decision-hold {{
+        background: {_HOLD_BG};
         border: 2px solid #d97706;
         border-radius: 14px;
         padding: 22px 26px;
         margin-bottom: 22px;
-        color: #78350f;
-        box-shadow: 0 2px 8px rgba(217,119,6,0.12);
-    }
+        color: {_HOLD_TX};
+        box-shadow: 0 2px 8px rgba(217,119,6,0.15);
+    }}
 
     /* ── Misc ── */
-    div[data-testid="stExpander"] {
-        border: 1px solid #e2e8f0;
+    div[data-testid="stExpander"] {{
+        border: 1px solid {_BORDER};
         border-radius: 10px;
-        background: #ffffff;
-    }
-    .stTabs [data-baseweb="tab-list"] { background: #f1f5f9; border-radius: 8px; padding: 4px; }
-    .stTabs [data-baseweb="tab"]      { border-radius: 6px; color: #475569; font-weight: 600; }
-    .stTabs [aria-selected="true"]    { background: #ffffff; color: #1e293b; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .stButton > button                { border-radius: 8px; font-weight: 600; }
-    div[data-testid="stMetric"]       { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        background: {_EXPANDER};
+    }}
+    .stTabs [data-baseweb="tab-list"] {{ background: {_TABLIST}; border-radius: 8px; padding: 4px; }}
+    .stTabs [data-baseweb="tab"]      {{ border-radius: 6px; color: {_SUBTEXT}; font-weight: 600; }}
+    .stTabs [aria-selected="true"]    {{ background: {_TABSEL}; color: {_TEXT}; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }}
+    .stButton > button                {{ border-radius: 8px; font-weight: 600; }}
+    div[data-testid="stMetric"]       {{ background: {_METRIC}; border: 1px solid {_BORDER}; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+    div[data-testid="stMetric"] *     {{ color: {_TEXT} !important; }}
+
+    /* ── Dataframe / table ── */
+    .stDataFrame {{ background: {_CARD}; }}
+    iframe[title="st.dataframe"]      {{ background: {_CARD}; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -150,18 +179,20 @@ with st.sidebar:
                     options=["Portfolio", "WMA Scanner"],
                     horizontal=False)
 
+    dark_mode = st.toggle("🌙 Dark Mode", value=False, key="dark_mode")
 
     st.markdown("---")
     st.markdown("### 💼 My Positions")
 
     HOLDINGS = {
         "AMD":  3.701284677,
-        "TSLA": 3.688690998,
         "DUOL": 13.562294282,
-        "PLTR": 7.234841001,
+        "TSLA": 3.688690998,
+        "PLTR": 7.909196679,
         "HIMS": 39.76698875,
         "NVDA": 4.488739476,
-        "MSFT": 0.488356258,
+        "MSFT": 0.718677631,
+        "NOW":  0.730715102,
     }
 
     @st.cache_data(ttl=300)
@@ -252,7 +283,7 @@ if page == "WMA Scanner":
 
     # ── Stock universe definitions ────────────────────────────────────────────
     UNIVERSES = {
-        "My Portfolio":        ["AMD","TSLA","DUOL","NVDA","HIMS","PLTR","MSFT"],
+        "My Portfolio":        ["AMD","DUOL","TSLA","PLTR","HIMS","NVDA","MSFT","NOW"],
         "Technology":          ["AAPL","MSFT","NVDA","META","GOOGL","AMZN","TSLA","AMD","AVGO","ORCL",
                                 "INTC","QCOM","TXN","MU","AMAT","NOW","SNOW","PLTR","CRWD","PANW",
                                 "DDOG","NET","ZS","FTNT","ADBE","CRM","INTU","WDAY","HUBS","DUOL",
