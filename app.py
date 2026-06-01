@@ -847,7 +847,8 @@ if page == "WMA Scanner":
                     return
 
                 # Build plot DataFrame – drop rows missing either axis
-                plot_df = df_raw[["Ticker", "R40 (Q)", "Cash/Debt", "In Zone"]].copy()
+                cols_needed = ["Ticker", "R40 (Q)", "Cash/Debt", "In Zone", "vs Daily (%)"]
+                plot_df = df_raw[[c for c in cols_needed if c in df_raw.columns]].copy()
                 plot_df = plot_df.dropna(subset=["R40 (Q)", "Cash/Debt"])
                 if plot_df.empty:
                     st.info("Data R40 atau Cash/Debt tidak tersedia untuk universe ini.")
@@ -907,21 +908,35 @@ if page == "WMA Scanner":
                     r40 = float(row["R40 (Q)"])
                     cd  = float(row["cd_disp"])
                     cd_raw = float(row["Cash/Debt"])
-                    in_zone = bool(row["In Zone"])
+                    in_zone = bool(row.get("In Zone", False))
+                    vs_daily = row.get("vs Daily (%)", 0)
+                    try:
+                        vs_daily = float(vs_daily) if pd.notna(vs_daily) else 0
+                    except (ValueError, TypeError):
+                        vs_daily = 0
+                    is_below = (not in_zone) and (vs_daily <= 0)
                     color = point_color(r40, cd_raw)
+
+                    if in_zone:
+                        symbol, size, status_label = "star",    16, "✅ In Entry Zone"
+                    elif is_below:
+                        symbol, size, status_label = "diamond",  13, "❌ Below WMA200"
+                    else:
+                        symbol, size, status_label = "circle",   11, "⬆️ Above WMA200"
+
                     hover = (
                         f"<b>{row['Ticker']}</b><br>"
                         f"R40 (Q): {r40:+.1f}<br>"
                         f"Cash/Debt: {row['cd_label']}<br>"
-                        f"{'✅ In Entry Zone' if in_zone else ''}"
+                        f"{status_label}"
                     )
                     fig.add_trace(go.Scatter(
                         x=[r40], y=[cd],
                         mode="markers+text",
                         marker=dict(
                             color=color,
-                            size=16 if in_zone else 11,
-                            symbol="star" if in_zone else "circle",
+                            size=size,
+                            symbol=symbol,
                             line=dict(color="white", width=1.5),
                             opacity=0.92,
                         ),
@@ -965,8 +980,8 @@ if page == "WMA Scanner":
 
                 # Legend
                 st.markdown("""
-<div style="display:flex;gap:24px;font-size:12px;color:#475569;margin-top:-8px;flex-wrap:wrap">
-<span>⭐ = In Entry Zone</span>
+<div style="display:flex;gap:20px;font-size:12px;color:#475569;margin-top:-8px;flex-wrap:wrap">
+<span>⭐ = In Entry Zone &nbsp;|&nbsp; ◆ = Below WMA200 &nbsp;|&nbsp; ● = Above WMA200</span>
 <span style="color:#16a34a;font-weight:700">🟢 Kuat & Sehat (R40≥40, C/D≥1)</span>
 <span style="color:#ea580c;font-weight:700">🟠 Tumbuh, Debt Tinggi (R40≥40, C/D&lt;1)</span>
 <span style="color:#ca8a04;font-weight:700">🟡 Kas Kuat, R40 Rendah (R40&lt;40, C/D≥1)</span>
