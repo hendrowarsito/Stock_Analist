@@ -697,9 +697,10 @@ if page == "WMA Scanner":
         else:
             df_all = pd.DataFrame(all_results)
 
-            tab_zone, tab_all = st.tabs([
+            tab_zone, tab_all, tab_chart = st.tabs([
                 f"🎯 In Entry Zone ({int(df_all['In Zone'].sum())})",
-                f"📋 All Results ({len(df_all)})"
+                f"📋 All Results ({len(df_all)})",
+                "📊 Kuadran R40 vs Cash/Debt",
             ])
 
             # ── Filter helper (operates on raw numeric df) ────────────────────
@@ -838,6 +839,141 @@ if page == "WMA Scanner":
                     styled = styled.map(color_decel, subset=["Decel"])
                 return styled
 
+            # ── Quadrant chart ────────────────────────────────────────────────
+            def render_quadrant_chart(df_raw):
+                """R40 (Q) vs Cash/Debt scatter with 4 coloured quadrants."""
+                if df_raw.empty:
+                    st.info("Tidak ada data untuk ditampilkan.")
+                    return
+
+                # Build plot DataFrame – drop rows missing either axis
+                plot_df = df_raw[["Ticker", "R40 (Q)", "Cash/Debt", "In Zone"]].copy()
+                plot_df = plot_df.dropna(subset=["R40 (Q)", "Cash/Debt"])
+                if plot_df.empty:
+                    st.info("Data R40 atau Cash/Debt tidak tersedia untuk universe ini.")
+                    return
+
+                # Cap Cash/Debt at 5 for display (99 = No Debt sentinel)
+                DISPLAY_CAP = 5.0
+                plot_df["cd_disp"] = plot_df["Cash/Debt"].apply(
+                    lambda v: DISPLAY_CAP if v >= DISPLAY_CAP else float(v)
+                )
+                plot_df["cd_label"] = plot_df["Cash/Debt"].apply(
+                    lambda v: "No Debt" if v == 99.0 else f"{v:.2f}×"
+                )
+
+                # Axis range padding
+                x_vals = plot_df["R40 (Q)"].values
+                y_vals = plot_df["cd_disp"].values
+                x_min = min(float(min(x_vals)) - 10, -20)
+                x_max = max(float(max(x_vals)) + 10,  80)
+                y_min = -0.1
+                y_max = DISPLAY_CAP + 0.3
+
+                fig = go.Figure()
+
+                # ── Quadrant background shapes ────────────────────────────────
+                quads = [
+                    # (x0, x1, y0, y1, rgba_fill)
+                    (40,    x_max, 1,     y_max, "rgba(34,197,94,0.10)"),   # top-right  green
+                    (40,    x_max, y_min, 1,     "rgba(249,115,22,0.10)"),  # bot-right  orange
+                    (x_min, 40,   1,     y_max, "rgba(234,179,8,0.10)"),   # top-left   yellow
+                    (x_min, 40,   y_min, 1,     "rgba(239,68,68,0.10)"),   # bot-left   red
+                ]
+                shapes = []
+                for x0, x1, y0, y1, fill in quads:
+                    shapes.append(dict(
+                        type="rect", xref="x", yref="y",
+                        x0=x0, x1=x1, y0=y0, y1=y1,
+                        fillcolor=fill, line_width=0, layer="below"
+                    ))
+                # Reference lines
+                shapes.append(dict(type="line", xref="x", yref="y",
+                    x0=40, x1=40, y0=y_min, y1=y_max,
+                    line=dict(color="#475569", width=1.5, dash="dash")))
+                shapes.append(dict(type="line", xref="x", yref="y",
+                    x0=x_min, x1=x_max, y0=1, y1=1,
+                    line=dict(color="#475569", width=1.5, dash="dash")))
+                fig.update_layout(shapes=shapes)
+
+                # ── Scatter points ────────────────────────────────────────────
+                def point_color(r40, cd):
+                    if r40 >= 40 and cd >= 1:   return "#16a34a"   # green
+                    if r40 >= 40 and cd < 1:    return "#ea580c"   # orange
+                    if r40 < 40  and cd >= 1:   return "#ca8a04"   # yellow
+                    return "#dc2626"                                 # red
+
+                for _, row in plot_df.iterrows():
+                    r40 = float(row["R40 (Q)"])
+                    cd  = float(row["cd_disp"])
+                    cd_raw = float(row["Cash/Debt"])
+                    in_zone = bool(row["In Zone"])
+                    color = point_color(r40, cd_raw)
+                    hover = (
+                        f"<b>{row['Ticker']}</b><br>"
+                        f"R40 (Q): {r40:+.1f}<br>"
+                        f"Cash/Debt: {row['cd_label']}<br>"
+                        f"{'✅ In Entry Zone' if in_zone else ''}"
+                    )
+                    fig.add_trace(go.Scatter(
+                        x=[r40], y=[cd],
+                        mode="markers+text",
+                        marker=dict(
+                            color=color,
+                            size=16 if in_zone else 11,
+                            symbol="star" if in_zone else "circle",
+                            line=dict(color="white", width=1.5),
+                            opacity=0.92,
+                        ),
+                        text=[row["Ticker"]],
+                        textposition="top center",
+                        textfont=dict(size=10, color=color),
+                        hovertemplate=hover + "<extra></extra>",
+                        showlegend=False,
+                    ))
+
+                # ── Quadrant label annotations ────────────────────────────────
+                ann_style = dict(xref="x", yref="y", showarrow=False,
+                                 font=dict(size=11, color="#64748b"), opacity=0.7)
+                annotations = [
+                    dict(x=x_max - 3, y=y_max - 0.15, text="Kuat & Sehat 🟢",
+                         xanchor="right", **ann_style),
+                    dict(x=x_max - 3, y=y_min + 0.12, text="Tumbuh, Debt Tinggi 🟠",
+                         xanchor="right", **ann_style),
+                    dict(x=x_min + 3, y=y_max - 0.15, text="Kas Kuat, R40 Rendah 🟡",
+                         xanchor="left", **ann_style),
+                    dict(x=x_min + 3, y=y_min + 0.12, text="Lemah & Berisiko 🔴",
+                         xanchor="left", **ann_style),
+                ]
+                fig.update_layout(annotations=annotations)
+
+                fig.update_layout(
+                    xaxis=dict(title="Rule of 40 (Q)", range=[x_min, x_max],
+                               gridcolor="#e2e8f0", zeroline=False),
+                    yaxis=dict(title="Cash / Debt",    range=[y_min, y_max],
+                               gridcolor="#e2e8f0", zeroline=False,
+                               tickvals=[0, 0.5, 1, 2, 3, 4, 5],
+                               ticktext=["0", "0.5×", "1×", "2×", "3×", "4×", "≥5×"]),
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
+                    height=580,
+                    margin=dict(l=60, r=40, t=40, b=60),
+                    hoverlabel=dict(bgcolor="white", font_size=13),
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Legend
+                st.markdown("""
+<div style="display:flex;gap:24px;font-size:12px;color:#475569;margin-top:-8px;flex-wrap:wrap">
+<span>⭐ = In Entry Zone</span>
+<span style="color:#16a34a;font-weight:700">🟢 Kuat & Sehat (R40≥40, C/D≥1)</span>
+<span style="color:#ea580c;font-weight:700">🟠 Tumbuh, Debt Tinggi (R40≥40, C/D&lt;1)</span>
+<span style="color:#ca8a04;font-weight:700">🟡 Kas Kuat, R40 Rendah (R40&lt;40, C/D≥1)</span>
+<span style="color:#dc2626;font-weight:700">🔴 Lemah & Berisiko (R40&lt;40, C/D&lt;1)</span>
+</div>
+""", unsafe_allow_html=True)
+
             # ── Tab: Entry Zone ───────────────────────────────────────────────
             with tab_zone:
                 df_zone_raw     = df_all[df_all["In Zone"] == True].copy()
@@ -875,6 +1011,10 @@ if page == "WMA Scanner":
                     style_table(format_df(df_all)),
                     use_container_width=True, hide_index=True
                 )
+
+            # ── Tab: Quadrant Chart ───────────────────────────────────────────
+            with tab_chart:
+                render_quadrant_chart(df_all)
 
     elif scan_btn and not scan_tickers:
         st.warning("Masukkan ticker terlebih dahulu.")
