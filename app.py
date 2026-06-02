@@ -978,20 +978,6 @@ if page == "WMA Scanner":
                         showlegend=False,
                     ))
 
-                # ── Quadrant label annotations ────────────────────────────────
-                ann_style = dict(xref="x", yref="y", showarrow=False,
-                                 font=dict(size=11, color="#64748b"), opacity=0.7)
-                annotations = [
-                    dict(x=x_max - 3, y=y_max - 0.15, text="Kuat & Sehat 🟢",
-                         xanchor="right", **ann_style),
-                    dict(x=x_max - 3, y=y_min + 0.12, text="Tumbuh, Debt Tinggi 🟠",
-                         xanchor="right", **ann_style),
-                    dict(x=x_min + 3, y=y_max - 0.15, text="Kas Kuat, R40 Rendah 🟡",
-                         xanchor="left", **ann_style),
-                    dict(x=x_min + 3, y=y_min + 0.12, text="Lemah & Berisiko 🔴",
-                         xanchor="left", **ann_style),
-                ]
-                fig.update_layout(annotations=annotations)
 
                 fig.update_layout(
                     xaxis=dict(title="Rule of 40 (Q)", range=[x_min, x_max],
