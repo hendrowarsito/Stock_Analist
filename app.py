@@ -356,6 +356,9 @@ if page == "WMA Scanner":
         "Keamanan Siber":      ["PANW","S","OKTA","CRWV","NTSK"],
         "Kuantum":             ["IONQ","RGTI","QBTS","QUBT","ARQQ"],
         "Antariksa":           ["RKLB","IRDM","PL","BKSY","LUNR","RDW","KTOS","LHX","ASTS"],
+        "Teknologi IDX":       ["GOTO.JK","BUKA.JK","EMTK.JK","DCII.JK","DMMX.JK",
+                                "MTDL.JK","MLPT.JK","EDGE.JK","WIFI.JK","TLKM.JK",
+                                "EXCL.JK","ISAT.JK","FREN.JK","ARTO.JK","BBYB.JK"],
         "Single Stock":        [],
     }
 
