@@ -1308,40 +1308,51 @@ if not ticker:
         ) or total_value or 1
 
         # ── Row definitions: (label, section)
-        # section: "price" | "wma" | "portfolio" | "growth"
+        # section: "portfolio" | "price" | "wma" | "growth"
         ROW_META = [
-            ("Price",            "price"),
-            ("Daily WMA200",     "wma"),
-            ("Weekly WMA200",    "wma"),
-            ("Nilai Posisi ($)", "portfolio"),
-            ("Avg Cost/Share",   "portfolio"),
-            ("% Portfolio",      "portfolio"),
-            ("Rev Growth Q (%)", "growth"),
+            ("Nilai Posisi ($)",    "portfolio"),
+            ("% Portfolio",         "portfolio"),
+            ("Harga Saat Ini",      "price"),
+            ("Avg Cost/Share",      "price"),
+            ("Pertumbuhan (%)",     "gain"),
+            ("vs Daily WMA200",     "wma"),
+            ("vs Weekly WMA200",    "wma"),
+            ("Rev Growth Q (%)",    "growth"),
         ]
-        SECTION_BG  = {"price": "#ffffff", "wma": "#fafafa",
-                       "portfolio": "#f0f9ff", "growth": "#fdf4ff"}
-        SECTION_LBL = {"price": "#1e293b", "wma": "#475569",
-                       "portfolio": "#0369a1", "growth": "#7c3aed"}
+        SECTION_BG  = {"portfolio": "#f0f9ff", "price": "#ffffff",
+                       "gain": "#f0fdf4", "wma": "#fafafa", "growth": "#fdf4ff"}
+        SECTION_LBL = {"portfolio": "#0369a1", "price": "#1e293b",
+                       "gain": "#15803d", "wma": "#475569", "growth": "#7c3aed"}
 
         rows = {lbl: {} for lbl, _ in ROW_META}
         for t in tickers_wma:
-            d      = wma_data.get(t, {})
-            price  = d.get("price")
-            shares = HOLDINGS.get(t, 0)
-            nominal = (price * shares) if price else None
+            d        = wma_data.get(t, {})
+            price    = d.get("price")
+            shares   = HOLDINGS.get(t, 0)
+            nominal  = (price * shares) if price else None
             avg_cost = AVERAGE_COST.get(t)
             pct_port = (nominal / total_val_wma * 100) if nominal else None
             rev_q_val = rev_q_data.get(t)
 
+            # Portfolio growth = (current_price - avg_cost) / avg_cost * 100
+            growth = ((price - avg_cost) / avg_cost * 100) if (price and avg_cost) else None
+
             d_color, d_str = pct_badge(d.get("d_pct"))
             w_color, w_str = pct_badge(d.get("w_pct"))
 
-            rows["Price"][t]            = (f"${price:,.2f}" if price else "–",    "#1e293b", True)
-            rows["Daily WMA200"][t]     = (d_str,  d_color, False)
-            rows["Weekly WMA200"][t]    = (w_str,  w_color, False)
-            rows["Nilai Posisi ($)"][t] = (f"${nominal:,.0f}" if nominal else "–", "#0f172a", True)
-            rows["Avg Cost/Share"][t]   = (f"${avg_cost:,.2f}" if avg_cost else "–", "#0369a1", False)
-            rows["% Portfolio"][t]      = (f"{pct_port:.1f}%" if pct_port else "–", "#0369a1", False)
+            rows["Nilai Posisi ($)"][t]  = (f"${nominal:,.0f}" if nominal else "–",     "#0f172a", True)
+            rows["% Portfolio"][t]       = (f"{pct_port:.1f}%" if pct_port else "–",    "#0369a1", False)
+            rows["Harga Saat Ini"][t]    = (f"${price:,.2f}"   if price    else "–",    "#1e293b", True)
+            rows["Avg Cost/Share"][t]    = (f"${avg_cost:,.2f}" if avg_cost else "–",   "#475569", False)
+
+            if growth is not None:
+                g_color = "#16a34a" if growth >= 0 else "#dc2626"
+                rows["Pertumbuhan (%)"][t] = (f"{growth:+.1f}%", g_color, True)
+            else:
+                rows["Pertumbuhan (%)"][t] = ("–", "#94a3b8", False)
+
+            rows["vs Daily WMA200"][t]   = (d_str, d_color, False)
+            rows["vs Weekly WMA200"][t]  = (w_str, w_color, False)
 
             if rev_q_val is not None:
                 rq_color = "#16a34a" if rev_q_val >= 0 else "#dc2626"
@@ -1349,15 +1360,22 @@ if not ticker:
             else:
                 rows["Rev Growth Q (%)"][t] = ("–", "#94a3b8", False)
 
-        # Header row
-        header_cells = '<th style="background:#f1f5f9;padding:10px 14px;text-align:left;'
-        header_cells += 'font-size:12px;font-weight:700;color:#475569;border:1px solid #e2e8f0;'
-        header_cells += 'min-width:90px;"></th>'
+        # ── Sticky-header + sticky-first-col table ───────────────────────────
+        TH_BASE = (
+            "padding:10px 14px;border:1px solid #e2e8f0;white-space:nowrap;"
+            "position:sticky;top:0;z-index:2;"
+        )
+        # Corner cell (sticky top + left)
+        corner = (
+            f'<th style="{TH_BASE}left:0;z-index:3;background:#f1f5f9;'
+            f'font-size:11px;font-weight:700;color:#94a3b8;min-width:130px;'
+            f'text-align:left;"></th>'
+        )
+        ticker_ths = ""
         for t in tickers_wma:
-            header_cells += (
-                f'<th style="background:#f1f5f9;padding:10px 14px;text-align:center;'
-                f'font-size:13px;font-weight:800;color:#1e293b;'
-                f'border:1px solid #e2e8f0;min-width:90px;">{t}</th>'
+            ticker_ths += (
+                f'<th style="{TH_BASE}background:#f1f5f9;text-align:center;'
+                f'font-size:13px;font-weight:800;color:#1e293b;min-width:90px;">{t}</th>'
             )
 
         # Data rows
@@ -1366,33 +1384,34 @@ if not ticker:
             ticker_vals = rows[row_label]
             row_bg  = SECTION_BG[section]
             lbl_clr = SECTION_LBL[section]
-            is_bold_lbl = section in ("price", "portfolio")
+            is_bold_lbl = section in ("portfolio", "gain")
+            # Sticky first column label cell
             lbl_style = (
-                f'font-size:12px;font-weight:{"700" if is_bold_lbl else "600"};'
-                f'color:{lbl_clr};'
-                f'padding:10px 14px;border:1px solid #e2e8f0;'
-                f'background:{row_bg};white-space:nowrap;'
+                f"font-size:11px;font-weight:{'700' if is_bold_lbl else '600'};"
+                f"color:{lbl_clr};"
+                f"padding:10px 14px;border:1px solid #e2e8f0;"
+                f"background:{row_bg};white-space:nowrap;"
+                f"position:sticky;left:0;z-index:1;"
             )
             data_rows_html += f'<tr><td style="{lbl_style}">{row_label}</td>'
             for t in tickers_wma:
                 val, color, bold = ticker_vals[t]
-                is_large = section == "price" or (section == "portfolio" and row_label == "Nilai Posisi ($)")
+                is_large = row_label in ("Nilai Posisi ($)", "Harga Saat Ini")
                 cell_style = (
-                    f'text-align:center;padding:10px 14px;'
-                    f'border:1px solid #e2e8f0;background:{row_bg};'
-                    f'font-size:{"15px" if is_large else "13px"};'
-                    f'font-weight:{"800" if bold else "700"};'
-                    f'color:{color};'
+                    f"text-align:center;padding:10px 14px;"
+                    f"border:1px solid #e2e8f0;background:{row_bg};"
+                    f"font-size:{'15px' if is_large else '13px'};"
+                    f"font-weight:{'800' if bold else '600'};"
+                    f"color:{color};"
                 )
                 data_rows_html += f'<td style="{cell_style}">{val}</td>'
             data_rows_html += '</tr>'
 
         table_html = f"""
-<div style="overflow-x:auto;margin-top:4px;">
-  <table style="border-collapse:collapse;width:100%;background:#ffffff;
-                border-radius:12px;overflow:hidden;
-                box-shadow:0 1px 4px rgba(0,0,0,0.07);">
-    <thead><tr>{header_cells}</tr></thead>
+<div style="overflow-x:auto;overflow-y:visible;margin-top:4px;
+            border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+  <table style="border-collapse:collapse;background:#ffffff;table-layout:auto;">
+    <thead><tr>{corner}{ticker_ths}</tr></thead>
     <tbody>{data_rows_html}</tbody>
   </table>
 </div>
