@@ -196,6 +196,19 @@ with st.sidebar:
         "NOW":  0.939990522,
     }
 
+    # Average cost per share (derived from Robinhood cost basis data)
+    AVERAGE_COST = {
+        "AMD":  190.78,
+        "DUOL": 133.71,
+        "TSLA": 402.41,
+        "HIMS": 34.44,
+        "PLTR": 137.14,
+        "NVDA": 159.61,
+        "MSFT": 416.19,
+        "IBRX": 7.75,
+        "NOW":  104.04,
+    }
+
     @st.cache_data(ttl=300)
     def fetch_portfolio_prices(tickers):
         prices = {}
@@ -1242,31 +1255,104 @@ if not ticker:
                     pass
             return result
 
-        with st.spinner("📐 Calculating WMA200..."):
-            wma_data = fetch_wma200(tuple(HOLDINGS.keys()))
+        @st.cache_data(ttl=3600)
+        def fetch_rev_growth_q(tickers):
+            result = {}
+            for t in tickers:
+                rev_q = None
+                try:
+                    tk = yf.Ticker(t)
+                    _parts = []
+                    for _api in [tk.quarterly_income_stmt, tk.quarterly_financials]:
+                        try:
+                            _df = _api
+                            if _df is not None and not _df.empty:
+                                for lbl in ["Total Revenue", "Revenue", "Net Revenue"]:
+                                    if lbl in _df.index:
+                                        _parts.append(_df.loc[lbl].dropna())
+                                        break
+                        except Exception:
+                            pass
+                    if _parts:
+                        rq = pd.concat(_parts)
+                        rq = rq[~rq.index.duplicated(keep="last")].sort_index()
+                        n = len(rq)
+                        if n >= 8:
+                            t_new = float(rq.iloc[-4:].sum())
+                            t_old = float(rq.iloc[-8:-4].sum())
+                            if t_old > 0:
+                                rev_q = (t_new / t_old - 1) * 100
+                        elif n >= 5:
+                            r1 = float(rq.iloc[-1])
+                            r0 = float(rq.iloc[-5])
+                            if r0 > 0:
+                                rev_q = (r1 / r0 - 1) * 100
+                except Exception:
+                    pass
+                result[t] = rev_q
+            return result
+
+        with st.spinner("📐 Calculating WMA200 & Rev Growth..."):
+            wma_data    = fetch_wma200(tuple(HOLDINGS.keys()))
+            rev_q_data  = fetch_rev_growth_q(tuple(HOLDINGS.keys()))
 
         def pct_badge(val):
             if val is None:
                 return "#64748b", "N/A"
             return ("#16a34a" if val >= 0 else "#dc2626"), f"{val:+.2f}%"
 
-        tickers_wma = list(HOLDINGS.keys())
+        tickers_wma  = list(HOLDINGS.keys())
+        total_val_wma = sum(
+            (wma_data.get(t, {}).get("price") or 0) * HOLDINGS.get(t, 0)
+            for t in tickers_wma
+        ) or total_value or 1
 
-        # Build HTML table – label column + one column per ticker
-        rows = {"Price": {}, "Daily WMA200": {}, "Weekly WMA200": {}}
+        # ── Row definitions: (label, section)
+        # section: "price" | "wma" | "portfolio" | "growth"
+        ROW_META = [
+            ("Price",            "price"),
+            ("Daily WMA200",     "wma"),
+            ("Weekly WMA200",    "wma"),
+            ("Nilai Posisi ($)", "portfolio"),
+            ("Avg Cost/Share",   "portfolio"),
+            ("% Portfolio",      "portfolio"),
+            ("Rev Growth Q (%)", "growth"),
+        ]
+        SECTION_BG  = {"price": "#ffffff", "wma": "#fafafa",
+                       "portfolio": "#f0f9ff", "growth": "#fdf4ff"}
+        SECTION_LBL = {"price": "#1e293b", "wma": "#475569",
+                       "portfolio": "#0369a1", "growth": "#7c3aed"}
+
+        rows = {lbl: {} for lbl, _ in ROW_META}
         for t in tickers_wma:
-            d = wma_data.get(t, {})
-            price          = d.get("price")
+            d      = wma_data.get(t, {})
+            price  = d.get("price")
+            shares = HOLDINGS.get(t, 0)
+            nominal = (price * shares) if price else None
+            avg_cost = AVERAGE_COST.get(t)
+            pct_port = (nominal / total_val_wma * 100) if nominal else None
+            rev_q_val = rev_q_data.get(t)
+
             d_color, d_str = pct_badge(d.get("d_pct"))
             w_color, w_str = pct_badge(d.get("w_pct"))
-            rows["Price"][t]        = (f"${price:,.2f}" if price else "–", "#1e293b",  True)
-            rows["Daily WMA200"][t] = (d_str, d_color, False)
-            rows["Weekly WMA200"][t]= (w_str, w_color, False)
+
+            rows["Price"][t]            = (f"${price:,.2f}" if price else "–",    "#1e293b", True)
+            rows["Daily WMA200"][t]     = (d_str,  d_color, False)
+            rows["Weekly WMA200"][t]    = (w_str,  w_color, False)
+            rows["Nilai Posisi ($)"][t] = (f"${nominal:,.0f}" if nominal else "–", "#0f172a", True)
+            rows["Avg Cost/Share"][t]   = (f"${avg_cost:,.2f}" if avg_cost else "–", "#0369a1", False)
+            rows["% Portfolio"][t]      = (f"{pct_port:.1f}%" if pct_port else "–", "#0369a1", False)
+
+            if rev_q_val is not None:
+                rq_color = "#16a34a" if rev_q_val >= 0 else "#dc2626"
+                rows["Rev Growth Q (%)"][t] = (f"{rev_q_val:+.1f}%", rq_color, False)
+            else:
+                rows["Rev Growth Q (%)"][t] = ("–", "#94a3b8", False)
 
         # Header row
         header_cells = '<th style="background:#f1f5f9;padding:10px 14px;text-align:left;'
         header_cells += 'font-size:12px;font-weight:700;color:#475569;border:1px solid #e2e8f0;'
-        header_cells += 'min-width:80px;"></th>'
+        header_cells += 'min-width:90px;"></th>'
         for t in tickers_wma:
             header_cells += (
                 f'<th style="background:#f1f5f9;padding:10px 14px;text-align:center;'
@@ -1276,22 +1362,25 @@ if not ticker:
 
         # Data rows
         data_rows_html = ""
-        for row_label, ticker_vals in rows.items():
-            is_price = (row_label == "Price")
-            row_bg   = "#ffffff" if is_price else "#fafafa"
+        for row_label, section in ROW_META:
+            ticker_vals = rows[row_label]
+            row_bg  = SECTION_BG[section]
+            lbl_clr = SECTION_LBL[section]
+            is_bold_lbl = section in ("price", "portfolio")
             lbl_style = (
-                f'font-size:12px;font-weight:{"700" if is_price else "600"};'
-                f'color:#{"1e293b" if is_price else "475569"};'
+                f'font-size:12px;font-weight:{"700" if is_bold_lbl else "600"};'
+                f'color:{lbl_clr};'
                 f'padding:10px 14px;border:1px solid #e2e8f0;'
                 f'background:{row_bg};white-space:nowrap;'
             )
             data_rows_html += f'<tr><td style="{lbl_style}">{row_label}</td>'
             for t in tickers_wma:
                 val, color, bold = ticker_vals[t]
+                is_large = section == "price" or (section == "portfolio" and row_label == "Nilai Posisi ($)")
                 cell_style = (
                     f'text-align:center;padding:10px 14px;'
                     f'border:1px solid #e2e8f0;background:{row_bg};'
-                    f'font-size:{"15px" if is_price else "13px"};'
+                    f'font-size:{"15px" if is_large else "13px"};'
                     f'font-weight:{"800" if bold else "700"};'
                     f'color:{color};'
                 )
