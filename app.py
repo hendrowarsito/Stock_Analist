@@ -202,11 +202,11 @@ with st.sidebar:
         "DUOL": 133.71,
         "TSLA": 402.41,
         "HIMS": 34.44,
-        "PLTR": 137.14,
+        "PLTR": 148.25,
         "NVDA": 159.61,
         "MSFT": 416.19,
         "IBRX": 7.75,
-        "NOW":  104.04,
+        "NOW":  132.80,
     }
 
     @st.cache_data(ttl=300)
